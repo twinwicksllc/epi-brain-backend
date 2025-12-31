@@ -5,7 +5,7 @@ Message Model
 from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
-from pgvector.sqlalchemy import Vector
+# from pgvector.sqlalchemy import Vector  # Commented out for SQLite compatibility
 from datetime import datetime
 import uuid
 import enum
@@ -33,7 +33,7 @@ class Message(Base):
     content = Column(Text, nullable=False)
     
     # Neural learning - vector embedding for semantic search
-    embedding = Column(Vector(384), nullable=True)  # 384-dimensional vector from sentence-transformers
+    # embedding = Column(Vector(384), nullable=True)  # Commented out for SQLite compatibility
     
     # Metadata
     tokens_used = Column(String, nullable=True)  # Track API usage

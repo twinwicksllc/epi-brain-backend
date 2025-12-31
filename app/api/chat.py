@@ -3,10 +3,12 @@ Chat API Endpoints
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, AsyncGenerator
 from uuid import UUID
 from datetime import datetime
+import json
 
 from app.database import get_db
 from app.models.user import User
@@ -243,3 +245,110 @@ async def delete_conversation(
     db.commit()
     
     return {"message": "Conversation deleted successfully"}
+
+
+@router.post("/stream")
+async def stream_message(
+    chat_request: ChatRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Send a message and get streaming AI response
+    
+    Args:
+        chat_request: Chat request with message and optional conversation_id
+        current_user: Current authenticated user
+        db: Database session
+        
+    Returns:
+        Streaming AI response
+    """
+    # Check message limit
+    if not check_message_limit(current_user, db):
+        raise MessageLimitExceeded()
+    
+    # Get or create conversation
+    if chat_request.conversation_id:
+        conversation = db.query(Conversation).filter(
+            Conversation.id == chat_request.conversation_id,
+            Conversation.user_id == current_user.id
+        ).first()
+        
+        if not conversation:
+            raise ConversationNotFound()
+    else:
+        # Create new conversation
+        conversation = Conversation(
+            user_id=current_user.id,
+            mode=chat_request.mode,
+            title=chat_request.message[:50] + "..." if len(chat_request.message) > 50 else chat_request.message
+        )
+        db.add(conversation)
+        db.flush()
+    
+    # Save user message
+    user_message = Message(
+        conversation_id=conversation.id,
+        role=MessageRole.USER,
+        content=chat_request.message
+    )
+    db.add(user_message)
+    db.flush()
+    db.commit()
+    
+    async def generate_stream() -> AsyncGenerator[str, None]:
+        """Generate SSE stream"""
+        start_time = datetime.utcnow()
+        full_response = ""
+        
+        try:
+            # Choose AI service based on configuration
+            if settings.USE_GROQ:
+                ai_service = GroqService()
+            else:
+                ai_service = ClaudeService()
+            
+            # Get streaming response
+            async for chunk in ai_service.get_streaming_response(
+                message=chat_request.message,
+                mode=chat_request.mode,
+                conversation_history=conversation.messages
+            ):
+                full_response += chunk
+                yield f"data: {json.dumps({'content': chunk})}\n\n"
+            
+            # Send done signal
+            yield f"data: [DONE]\n\n"
+            
+            # Save AI message to database
+            response_time_ms = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+            
+            ai_message = Message(
+                conversation_id=conversation.id,
+                role=MessageRole.ASSISTANT,
+                content=full_response,
+                tokens_used="0",  # Groq doesn't provide token count in streaming
+                response_time_ms=str(response_time_ms)
+            )
+            db.add(ai_message)
+            
+            # Update user message count
+            current_user.message_count = str(int(current_user.message_count) + 1)
+            
+            db.commit()
+            
+        except Exception as e:
+            db.rollback()
+            error_msg = f"Error getting AI response: {str(e)}"
+            yield f"data: {json.dumps({'error': error_msg})}\n\n"
+    
+    return StreamingResponse(
+        generate_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )

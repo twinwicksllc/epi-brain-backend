@@ -5,7 +5,7 @@ Uses Llama 3.1 models
 """
 
 from groq import Groq
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, AsyncGenerator
 import logging
 
 from app.config import settings
@@ -213,3 +213,62 @@ Tone: Motivational, supportive, health-focused, and encouraging."""
         except Exception as e:
             logger.error(f"Groq API error: {e}")
             raise Exception(f"Groq API error: {str(e)}")
+    
+    async def get_streaming_response(
+        self,
+        message: str,
+        mode: str,
+        conversation_history: Optional[List[Message]] = None
+    ) -> AsyncGenerator[str, None]:
+        """
+        Get streaming AI response from Groq
+        
+        Args:
+            message: User's message
+            mode: Personality mode
+            conversation_history: Previous messages in conversation
+            
+        Yields:
+            Response content chunks
+        """
+        try:
+            # Format conversation history
+            messages = []
+            
+            # Add system prompt as first message
+            system_prompt = self._get_system_prompt(mode)
+            messages.append({
+                "role": "system",
+                "content": system_prompt
+            })
+            
+            # Add conversation history
+            if conversation_history:
+                messages.extend(self._format_conversation_history(conversation_history))
+            
+            # Add current message
+            messages.append({
+                "role": "user",
+                "content": message
+            })
+            
+            # Call Groq API with streaming
+            stream = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=0.7,
+                max_tokens=4096,
+                top_p=1,
+                stream=True
+            )
+            
+            # Stream response chunks
+            for chunk in stream:
+                if chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+            
+            logger.info(f"Groq streaming response completed - Mode: {mode}, Model: {self.model}")
+            
+        except Exception as e:
+            logger.error(f"Groq streaming API error: {e}")
+            raise Exception(f"Groq streaming API error: {str(e)}")

@@ -26,7 +26,7 @@ class LearningPattern(Base):
     
     # Pattern data
     success_score = Column(Float, nullable=False)  # 0.0 to 1.0
-    metadata = Column(JSON, nullable=True)  # Additional pattern data
+    pattern_metadata = Column(JSON, nullable=True)  # Additional pattern data
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
