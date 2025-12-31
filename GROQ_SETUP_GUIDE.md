@@ -158,13 +158,14 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 You can choose different Groq models in your `.env` file:
 
-### Llama 3.1 70B Versatile (Recommended)
+### Llama 3.3 70B Versatile (Recommended)
 ```env
-GROQ_MODEL=llama-3.1-70b-versatile
+GROQ_MODEL=llama-3.3-70b-versatile
 ```
 - **Best for:** Production-quality responses
 - **Speed:** Fast (~300 tokens/sec)
-- **Quality:** Excellent (comparable to GPT-3.5)
+- **Quality:** Excellent (comparable to GPT-4)
+- **Note:** Latest and most capable model
 
 ### Llama 3.1 8B Instant (Fastest)
 ```env

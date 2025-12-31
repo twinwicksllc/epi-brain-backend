@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     
     # Groq API (FREE for MVP)
     GROQ_API_KEY: str = ""
-    GROQ_MODEL: str = "llama-3.1-70b-versatile"  # or "llama-3.1-8b-instant" for faster responses
+    GROQ_MODEL: str = "llama-3.3-70b-versatile"  # or "llama-3.1-8b-instant" for faster responses
     
     # Claude API (for production)
     CLAUDE_API_KEY: str = ""
