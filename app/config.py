@@ -76,7 +76,7 @@ class Settings(BaseSettings):
     AWS_S3_BUCKET: Optional[str] = None
     
     # CORS
-    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:3001"
+    CORS_ORIGINS: str = "*"  # Allow all origins for development
     CORS_ALLOW_CREDENTIALS: bool = True
     
     # Rate Limiting
