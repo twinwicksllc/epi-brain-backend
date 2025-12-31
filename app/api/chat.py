@@ -17,6 +17,8 @@ from app.schemas.message import ChatRequest, ChatResponse, MessageResponse
 from app.core.dependencies import get_current_active_user, check_message_limit
 from app.core.exceptions import ConversationNotFound, UnauthorizedAccess, MessageLimitExceeded
 from app.services.claude import ClaudeService
+from app.services.groq_service import GroqService
+from app.config import settings
 
 router = APIRouter()
 
@@ -74,8 +76,13 @@ async def send_message(
     start_time = datetime.utcnow()
     
     try:
-        claude_service = ClaudeService()
-        ai_response = await claude_service.get_response(
+        # Choose AI service based on configuration
+        if settings.USE_GROQ:
+            ai_service = GroqService()
+        else:
+            ai_service = ClaudeService()
+        
+        ai_response = await ai_service.get_response(
             message=chat_request.message,
             mode=chat_request.mode,
             conversation_history=conversation.messages

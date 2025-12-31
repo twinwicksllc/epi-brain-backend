@@ -80,6 +80,9 @@ epi-brain-backend/
 - PostgreSQL 15+
 - Redis
 - Docker (optional, for containerized setup)
+- **Groq API Key** (FREE) - Get yours at https://console.groq.com
+
+> 💡 **Using Groq for MVP:** We're using Groq's FREE API with Llama 3.1 models for the MVP. It's fast, free, and easy to switch to Claude later. See [GROQ_SETUP_GUIDE.md](GROQ_SETUP_GUIDE.md) for detailed setup instructions.
 
 ### Local Development Setup
 
@@ -105,6 +108,14 @@ epi-brain-backend/
    cp .env.example .env
    # Edit .env with your configuration
    ```
+   
+   **Get your FREE Groq API key:**
+   - Visit https://console.groq.com
+   - Sign up (no credit card required)
+   - Create an API key
+   - Add to `.env`: `GROQ_API_KEY=gsk_your_key_here`
+   
+   See [GROQ_SETUP_GUIDE.md](GROQ_SETUP_GUIDE.md) for detailed instructions.
 
 5. **Start PostgreSQL and Redis (using Docker):**
    ```bash

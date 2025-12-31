@@ -22,6 +22,7 @@ pydantic[email]==2.5.3
 # AI & ML
 anthropic==0.18.1
 openai==1.10.0
+groq==0.4.1
 sentence-transformers==2.3.1
 torch==2.1.2
 numpy==1.26.3

@@ -33,8 +33,15 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     
-    # Claude API
-    CLAUDE_API_KEY: str
+    # AI Provider Selection
+    USE_GROQ: bool = True  # Set to False to use Claude instead
+    
+    # Groq API (FREE for MVP)
+    GROQ_API_KEY: str = ""
+    GROQ_MODEL: str = "llama-3.1-70b-versatile"  # or "llama-3.1-8b-instant" for faster responses
+    
+    # Claude API (for production)
+    CLAUDE_API_KEY: str = ""
     CLAUDE_MODEL: str = "claude-3-5-sonnet-20241022"
     CLAUDE_MAX_TOKENS: int = 4096
     
