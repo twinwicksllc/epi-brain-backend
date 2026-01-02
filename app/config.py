@@ -116,8 +116,8 @@ class Settings(BaseSettings):
     ]
     
     # Depth Engine Parameters
-    DEPTH_UP_ALPHA: float = 0.35      # Speed going deeper
-    DEPTH_DOWN_ALPHA: float = 0.08    # Speed coming back up
+    DEPTH_UP_ALPHA: float = 0.80      # Speed going deeper
+    DEPTH_DOWN_ALPHA: float = 0.15    # Speed coming back up
     DEPTH_DECAY_RATE: float = 0.002   # Per second decay
     
     # Scoring Parameters
