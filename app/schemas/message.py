@@ -49,3 +49,4 @@ class ChatResponse(BaseModel):
     created_at: datetime
     tokens_used: Optional[int] = None
     response_time_ms: Optional[int] = None
+    depth: Optional[float] = None  # Current conversation depth (0.0-1.0)

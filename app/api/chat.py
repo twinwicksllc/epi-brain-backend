@@ -20,9 +20,17 @@ from app.core.dependencies import get_current_active_user, check_message_limit
 from app.core.exceptions import ConversationNotFound, UnauthorizedAccess, MessageLimitExceeded
 from app.services.claude import ClaudeService
 from app.services.groq_service import GroqService
+from app.services.depth_scorer import DepthScorer
+from app.services.depth_engine import ConversationDepthEngine
 from app.config import settings
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Initialize depth scorer
+depth_scorer = DepthScorer()
 
 
 @router.post("/message", response_model=ChatResponse)
@@ -74,6 +82,46 @@ async def send_message(
     db.add(user_message)
     db.flush()
     
+    # Check if depth tracking is enabled for this mode
+    depth_enabled = (
+        settings.DEPTH_ENABLED and
+        conversation.depth_enabled and
+        chat_request.mode in settings.DEPTH_TRACKED_MODES
+    )
+    
+    # Score the turn if depth tracking is enabled
+    turn_score = None
+    new_depth = None
+    if depth_enabled:
+        try:
+            logger.info(f"Scoring depth for conversation {conversation.id}, mode {chat_request.mode}")
+            scoring_result = await depth_scorer.score_turn(
+                user_message=chat_request.message
+            )
+            turn_score = scoring_result['score']
+            
+            # Update conversation depth
+            engine = ConversationDepthEngine(
+                initial_depth=conversation.depth,
+                last_updated_at=conversation.last_depth_update
+            )
+            new_depth = engine.update(turn_score)
+            
+            conversation.depth = new_depth
+            conversation.last_depth_update = datetime.utcnow()
+            
+            # Save turn score to message (for analytics)
+            user_message.turn_score = turn_score
+            user_message.scoring_source = scoring_result['source']
+            
+            logger.info(
+                f"Depth updated: {conversation.depth:.2f} "
+                f"(turn_score={turn_score:.2f}, source={scoring_result['source']})"
+            )
+        except Exception as e:
+            logger.error(f"Error scoring depth: {e}", exc_info=True)
+            # Don't fail the request if depth scoring fails
+    
     # Get AI response
     start_time = datetime.utcnow()
     
@@ -115,7 +163,8 @@ async def send_message(
             mode=conversation.mode,
             created_at=ai_message.created_at,
             tokens_used=int(ai_message.tokens_used) if ai_message.tokens_used else None,
-            response_time_ms=response_time_ms
+            response_time_ms=response_time_ms,
+            depth=new_depth if depth_enabled else None
         )
         
     except Exception as e:
@@ -295,6 +344,42 @@ async def stream_message(
     )
     db.add(user_message)
     db.flush()
+    
+    # Check if depth tracking is enabled for this mode
+    depth_enabled = (
+        settings.DEPTH_ENABLED and
+        conversation.depth_enabled and
+        chat_request.mode in settings.DEPTH_TRACKED_MODES
+    )
+    
+    # Score the turn if depth tracking is enabled
+    new_depth = None
+    if depth_enabled:
+        try:
+            logger.info(f"Scoring depth for streaming conversation {conversation.id}")
+            scoring_result = await depth_scorer.score_turn(
+                user_message=chat_request.message
+            )
+            turn_score = scoring_result['score']
+            
+            # Update conversation depth
+            engine = ConversationDepthEngine(
+                initial_depth=conversation.depth,
+                last_updated_at=conversation.last_depth_update
+            )
+            new_depth = engine.update(turn_score)
+            
+            conversation.depth = new_depth
+            conversation.last_depth_update = datetime.utcnow()
+            
+            # Save turn score to message
+            user_message.turn_score = turn_score
+            user_message.scoring_source = scoring_result['source']
+            
+            logger.info(f"Depth updated in streaming: {new_depth:.2f}")
+        except Exception as e:
+            logger.error(f"Error scoring depth in streaming: {e}", exc_info=True)
+    
     db.commit()
     
     async def generate_stream() -> AsyncGenerator[str, None]:
@@ -352,3 +437,130 @@ async def stream_message(
             "X-Accel-Buffering": "no"
         }
     )
+
+@router.get("/conversations/{conversation_id}/depth")
+async def get_conversation_depth(
+    conversation_id: UUID,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get current depth for a conversation
+    
+    Args:
+        conversation_id: Conversation ID
+        current_user: Current authenticated user
+        db: Database session
+        
+    Returns:
+        Current depth value with metadata
+    """
+    conversation = db.query(Conversation).filter(
+        Conversation.id == conversation_id,
+        Conversation.user_id == current_user.id
+    ).first()
+    
+    if not conversation:
+        raise ConversationNotFound()
+    
+    # Check if depth tracking is enabled
+    if not conversation.depth_enabled or conversation.mode not in settings.DEPTH_TRACKED_MODES:
+        return {
+            "depth": None,
+            "enabled": False,
+            "mode": conversation.mode
+        }
+    
+    # Get depth with decay applied
+    engine = ConversationDepthEngine(
+        initial_depth=conversation.depth,
+        last_updated_at=conversation.last_depth_update
+    )
+    current_depth = engine.get_depth()
+    
+    return {
+        "depth": current_depth,
+        "enabled": True,
+        "mode": conversation.mode,
+        "last_updated": conversation.last_depth_update.isoformat()
+    }
+
+
+@router.post("/conversations/{conversation_id}/depth/disable")
+async def disable_depth_tracking(
+    conversation_id: UUID,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Disable depth tracking for a conversation
+    
+    Args:
+        conversation_id: Conversation ID
+        current_user: Current authenticated user
+        db: Database session
+        
+    Returns:
+        Success message
+    """
+    conversation = db.query(Conversation).filter(
+        Conversation.id == conversation_id,
+        Conversation.user_id == current_user.id
+    ).first()
+    
+    if not conversation:
+        raise ConversationNotFound()
+    
+    conversation.depth_enabled = False
+    conversation.depth = 0.0  # Reset depth when disabled
+    db.commit()
+    
+    logger.info(f"Depth tracking disabled for conversation {conversation_id}")
+    
+    return {
+        "message": "Depth tracking disabled",
+        "conversation_id": str(conversation_id)
+    }
+
+
+@router.post("/conversations/{conversation_id}/depth/enable")
+async def enable_depth_tracking(
+    conversation_id: UUID,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Enable depth tracking for a conversation
+    
+    Args:
+        conversation_id: Conversation ID
+        current_user: Current authenticated user
+        db: Database session
+        
+    Returns:
+        Success message
+    """
+    conversation = db.query(Conversation).filter(
+        Conversation.id == conversation_id,
+        Conversation.user_id == current_user.id
+    ).first()
+    
+    if not conversation:
+        raise ConversationNotFound()
+    
+    # Check if mode supports depth tracking
+    if conversation.mode not in settings.DEPTH_TRACKED_MODES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Depth tracking not available for mode '{conversation.mode}'"
+        )
+    
+    conversation.depth_enabled = True
+    db.commit()
+    
+    logger.info(f"Depth tracking enabled for conversation {conversation_id}")
+    
+    return {
+        "message": "Depth tracking enabled",
+        "conversation_id": str(conversation_id)
+    }
