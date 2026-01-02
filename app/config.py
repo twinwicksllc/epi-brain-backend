@@ -100,10 +100,30 @@ class Settings(BaseSettings):
     ENABLE_REFERRAL_SYSTEM: bool = True
     
     # Tier Limits
-    FREE_TIER_MESSAGE_LIMIT: int = 50
+    FREE_TIER_MESSAGE_LIMIT: int = 9999  # Increased for development
     FREE_TIER_HISTORY_DAYS: int = 7
     PRO_TIER_PRICE: float = 19.99
     ENTERPRISE_TIER_MIN_USERS: int = 100
+    
+    # Depth Feature Configuration
+    DEPTH_ENABLED: bool = True
+    DEPTH_TRACKED_MODES: list = [
+        "personal_friend",
+        "weight_loss_coach",
+        "christian_companion",
+        "psychology_expert",
+        "business_mentor"
+    ]
+    
+    # Depth Engine Parameters
+    DEPTH_UP_ALPHA: float = 0.35      # Speed going deeper
+    DEPTH_DOWN_ALPHA: float = 0.08    # Speed coming back up
+    DEPTH_DECAY_RATE: float = 0.002   # Per second decay
+    
+    # Scoring Parameters
+    DEPTH_LLM_THRESHOLD: float = 0.6  # When to use LLM
+    DEPTH_MIN_MESSAGE_LENGTH: int = 20  # Ignore very short messages
+    DEPTH_RAPID_MESSAGE_WINDOW: int = 5  # Seconds to batch rapid messages
     
     class Config:
         env_file = ".env"

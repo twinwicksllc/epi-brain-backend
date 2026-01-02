@@ -2,7 +2,7 @@
 Message Model
 """
 
-from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Enum as SQLEnum
+from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Enum as SQLEnum, Float
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 # from pgvector.sqlalchemy import Vector  # Commented out for SQLite compatibility
@@ -41,6 +41,10 @@ class Message(Base):
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    
+    # Depth tracking (for analytics/debugging)
+    turn_score = Column(Float, nullable=True)
+    scoring_source = Column(String(20), nullable=True)
     
     # Relationships
     conversation = relationship("Conversation", back_populates="messages")
