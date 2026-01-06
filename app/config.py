@@ -19,16 +19,16 @@ class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api/v1"
     
     # Database
-    DATABASE_URL: str
+    DATABASE_URL: str = ""
     DATABASE_POOL_SIZE: int = 20
     DATABASE_MAX_OVERFLOW: int = 0
     
     # Redis
-    REDIS_URL: str
+    REDIS_URL: str = ""
     REDIS_MAX_CONNECTIONS: int = 50
     
     # JWT
-    JWT_SECRET_KEY: str
+    JWT_SECRET_KEY: str = ""
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
@@ -46,17 +46,17 @@ class Settings(BaseSettings):
     CLAUDE_MAX_TOKENS: int = 4096
     
     # ElevenLabs
-    ELEVENLABS_API_KEY: str
+    ELEVENLABS_API_KEY: str = ""
     ELEVENLABS_VOICE_ID_MALE: Optional[str] = None
     ELEVENLABS_VOICE_ID_FEMALE: Optional[str] = None
     
     # OpenAI
-    OPENAI_API_KEY: str
+    OPENAI_API_KEY: str = ""
     
     # Stripe
-    STRIPE_SECRET_KEY: str
-    STRIPE_PUBLISHABLE_KEY: str
-    STRIPE_WEBHOOK_SECRET: str
+    STRIPE_SECRET_KEY: str = ""
+    STRIPE_PUBLISHABLE_KEY: str = ""
+    STRIPE_WEBHOOK_SECRET: str = ""
     STRIPE_PRICE_ID_PRO: Optional[str] = None
     STRIPE_PRICE_ID_ENTERPRISE: Optional[str] = None
     
