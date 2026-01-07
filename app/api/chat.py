@@ -132,10 +132,13 @@ async def send_message(
         else:
             ai_service = ClaudeService()
         
+        # Get AI response
+        # Exclude the last message (current user message) from history to avoid duplicate
+        conversation_history = conversation.messages[:-1] if conversation.messages else []
         ai_response = await ai_service.get_response(
             message=chat_request.message,
             mode=chat_request.mode,
-            conversation_history=conversation.messages
+            conversation_history=conversation_history
         )
         
         response_time_ms = int((datetime.utcnow() - start_time).total_seconds() * 1000)
@@ -395,10 +398,12 @@ async def stream_message(
                 ai_service = ClaudeService()
             
             # Get streaming response
+            # Exclude the last message (current user message) from history to avoid duplicate
+            conversation_history = conversation.messages[:-1] if conversation.messages else []
             async for chunk in ai_service.get_streaming_response(
                 message=chat_request.message,
                 mode=chat_request.mode,
-                conversation_history=conversation.messages
+                conversation_history=conversation_history
             ):
                 full_response += chunk
                 yield f"data: {json.dumps({'content': chunk})}\n\n"
