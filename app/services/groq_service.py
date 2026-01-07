@@ -21,6 +21,23 @@ class GroqService:
         """Initialize Groq client"""
         self.client = Groq(api_key=settings.GROQ_API_KEY)
         self.model = settings.GROQ_MODEL
+
+    def _select_model(self, mode: str, user_tier: Optional[str] = None) -> str:
+        """Select model based on user tier and personality mode.
+
+        Falls back to settings.GROQ_MODEL when no specific mapping found.
+        """
+        tier = (user_tier or "").lower()
+        # Free tier
+        if tier == "free":
+            return settings.GROQ_MODEL_MAP_FREE.get(mode, settings.GROQ_MODEL_FREE_DEFAULT or settings.GROQ_MODEL)
+
+        # Paid/pro/enterprise tiers
+        if tier in ("pro", "enterprise", "paid"):
+            return settings.GROQ_MODEL_MAP_PAID.get(mode, settings.GROQ_MODEL_PAID_DEFAULT or settings.GROQ_MODEL)
+
+        # Default fallback
+        return settings.GROQ_MODEL
     
     def _get_system_prompt(self, mode: str) -> str:
         """
@@ -131,7 +148,8 @@ Tone: High-energy, motivational, and health-focused."""
         self,
         message: str,
         mode: str,
-        conversation_history: Optional[List[Message]] = None
+        conversation_history: Optional[List[Message]] = None,
+        user_tier: Optional[str] = None
     ) -> Dict:
         """
         Get AI response from Groq
@@ -165,9 +183,12 @@ Tone: High-energy, motivational, and health-focused."""
                 "content": message
             })
             
+            # Choose model per-request
+            model = self._select_model(mode, user_tier)
+
             # Call Groq API
             response = self.client.chat.completions.create(
-                model=self.model,
+                model=model,
                 messages=messages,
                 temperature=0.7,
                 max_tokens=4096,
@@ -179,12 +200,12 @@ Tone: High-energy, motivational, and health-focused."""
             content = response.choices[0].message.content
             tokens_used = response.usage.total_tokens
             
-            logger.info(f"Groq API response - Mode: {mode}, Model: {self.model}, Tokens: {tokens_used}")
+            logger.info(f"Groq API response - Mode: {mode}, Model: {model}, Tokens: {tokens_used}")
             
             return {
                 "content": content,
                 "tokens_used": tokens_used,
-                "model": self.model
+                "model": model
             }
             
         except Exception as e:
@@ -195,7 +216,8 @@ Tone: High-energy, motivational, and health-focused."""
         self,
         message: str,
         mode: str,
-        conversation_history: Optional[List[Message]] = None
+        conversation_history: Optional[List[Message]] = None,
+        user_tier: Optional[str] = None
     ) -> AsyncGenerator[str, None]:
         """
         Get streaming AI response from Groq
@@ -229,9 +251,12 @@ Tone: High-energy, motivational, and health-focused."""
                 "content": message
             })
             
+            # Choose model per-request
+            model = self._select_model(mode, user_tier)
+
             # Call Groq API with streaming
             stream = self.client.chat.completions.create(
-                model=self.model,
+                model=model,
                 messages=messages,
                 temperature=0.7,
                 max_tokens=4096,
@@ -244,7 +269,7 @@ Tone: High-energy, motivational, and health-focused."""
                 if chunk.choices[0].delta.content:
                     yield chunk.choices[0].delta.content
             
-            logger.info(f"Groq streaming response completed - Mode: {mode}, Model: {self.model}")
+            logger.info(f"Groq streaming response completed - Mode: {mode}, Model: {model}")
             
         except Exception as e:
             logger.error(f"Groq streaming API error: {e}")

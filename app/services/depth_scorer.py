@@ -45,7 +45,8 @@ class DepthScorer:
     async def score_turn(
         self,
         user_message: str,
-        assistant_message: Optional[str] = None
+        assistant_message: Optional[str] = None,
+        user_tier: Optional[str] = None
     ) -> Dict:
         """
         Score a conversation turn for depth
@@ -84,7 +85,7 @@ class DepthScorer:
         
         if use_llm:
             logger.info(f"Using LLM scorer (heuristic={heuristic_score:.2f}, length={len(user_message)})")
-            llm_score = await self._llm_score(user_message)
+            llm_score = await self._llm_score(user_message, user_tier=user_tier)
             final_score = 0.6 * heuristic_score + 0.4 * llm_score
             source = 'llm'
             logger.info(f"LLM score: {llm_score:.2f}, Final: {final_score:.2f}")
@@ -150,7 +151,7 @@ class DepthScorer:
         
         return min(1.0, score)
     
-    async def _llm_score(self, message: str) -> float:
+    async def _llm_score(self, message: str, user_tier: Optional[str] = None) -> float:
         """
         Use LLM to score message depth
         
@@ -173,7 +174,8 @@ Respond with only a number between 0.0 and 1.0."""
             response = await self.groq.get_response(
                 message=prompt,
                 mode="personal_friend",  # Use any mode, doesn't matter for scoring
-                conversation_history=[]
+                conversation_history=[],
+                user_tier=user_tier
             )
             
             # Extract number from response

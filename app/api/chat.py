@@ -96,7 +96,8 @@ async def send_message(
         try:
             logger.info(f"Scoring depth for conversation {conversation.id}, mode {chat_request.mode}")
             scoring_result = await depth_scorer.score_turn(
-                user_message=chat_request.message
+                user_message=chat_request.message,
+                user_tier=current_user.tier.value if hasattr(current_user, "tier") else None
             )
             turn_score = scoring_result['score']
             
@@ -138,7 +139,12 @@ async def send_message(
         ai_response = await ai_service.get_response(
             message=chat_request.message,
             mode=chat_request.mode,
+<<<<<<< HEAD
             conversation_history=conversation_history
+=======
+            conversation_history=conversation.messages,
+            user_tier=current_user.tier.value if hasattr(current_user, "tier") else None
+>>>>>>> 93b1a6e (feat: tier+mode Groq model selection for chat and scoring)
         )
         
         response_time_ms = int((datetime.utcnow() - start_time).total_seconds() * 1000)
@@ -194,15 +200,13 @@ async def get_conversations(
         skip: Number of conversations to skip
         limit: Maximum number of conversations to return
         
-    Returns:
-        List of user's conversations
+        Returns:
+            List of user's conversations ordered by last update
     """
     conversations = db.query(Conversation).filter(
         Conversation.user_id == current_user.id
-    ).order_by(
-        Conversation.updated_at.desc()
-    ).offset(skip).limit(limit).all()
-    
+    ).order_by(Conversation.updated_at.desc()).offset(skip).limit(limit).all()
+
     return conversations
 
 
@@ -361,7 +365,8 @@ async def stream_message(
         try:
             logger.info(f"Scoring depth for streaming conversation {conversation.id}")
             scoring_result = await depth_scorer.score_turn(
-                user_message=chat_request.message
+                user_message=chat_request.message,
+                user_tier=current_user.tier.value if hasattr(current_user, "tier") else None
             )
             turn_score = scoring_result['score']
             
@@ -389,13 +394,14 @@ async def stream_message(
         """Generate SSE stream"""
         start_time = datetime.utcnow()
         full_response = ""
-        
+
         try:
             # Choose AI service based on configuration
             if settings.USE_GROQ:
                 ai_service = GroqService()
             else:
                 ai_service = ClaudeService()
+<<<<<<< HEAD
             
             # Get streaming response
             # Exclude the last message (current user message) from history to avoid duplicate
@@ -404,16 +410,25 @@ async def stream_message(
                 message=chat_request.message,
                 mode=chat_request.mode,
                 conversation_history=conversation_history
+=======
+
+            # Get streaming response (select model based on user tier)
+            async for chunk in ai_service.get_streaming_response(
+                message=chat_request.message,
+                mode=chat_request.mode,
+                conversation_history=conversation.messages,
+                user_tier=current_user.tier.value if hasattr(current_user, "tier") else None
+>>>>>>> 93b1a6e (feat: tier+mode Groq model selection for chat and scoring)
             ):
                 full_response += chunk
                 yield f"data: {json.dumps({'content': chunk})}\n\n"
-            
+
             # Send done signal
             yield f"data: [DONE]\n\n"
-            
+
             # Save AI message to database
             response_time_ms = int((datetime.utcnow() - start_time).total_seconds() * 1000)
-            
+
             ai_message = Message(
                 conversation_id=conversation.id,
                 role=MessageRole.ASSISTANT,
@@ -422,12 +437,12 @@ async def stream_message(
                 response_time_ms=str(response_time_ms)
             )
             db.add(ai_message)
-            
+
             # Update user message count
             current_user.message_count = str(int(current_user.message_count) + 1)
-            
+
             db.commit()
-            
+
         except Exception as e:
             db.rollback()
             error_msg = f"Error getting AI response: {str(e)}"
