@@ -79,6 +79,9 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = "https://epibraingenius.com,https://www.epibraingenius.com"  # Production CORS origins
     CORS_ALLOW_CREDENTIALS: bool = True
     
+    # Admin API Key
+    ADMIN_API_KEY: str = ""  # Set this in production environment variables
+    
     # Rate Limiting
     RATE_LIMIT_PER_MINUTE: int = 60
     RATE_LIMIT_PER_HOUR: int = 1000

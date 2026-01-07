@@ -173,3 +173,27 @@ def generate_referral_code(user_id: UUID) -> str:
     referral_code = hash_hex[:8].upper()
     
     return f"EPI{referral_code}"
+def verify_admin_key(admin_key: str) -> bool:
+    """
+    Verify admin API key
+    
+    Args:
+        admin_key: Admin API key to verify
+    
+    Returns:
+        True if admin key is valid, raises HTTPException otherwise
+    
+    Raises:
+        HTTPException: If admin key is invalid
+    """
+    from fastapi import HTTPException
+    from app.config import settings
+    
+    if not settings.ADMIN_API_KEY:
+        raise HTTPException(status_code=500, detail="Admin API key not configured")
+    
+    if admin_key != settings.ADMIN_API_KEY:
+        raise HTTPException(status_code=403, detail="Invalid admin API key")
+    
+    return True
+
