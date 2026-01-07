@@ -13,7 +13,7 @@ import logging
 
 from app.config import settings
 from app.database import engine, Base
-from app.api import auth, chat, users, modes
+from app.api import auth, chat, users, modes, admin
 
 # Configure logging
 logging.basicConfig(
