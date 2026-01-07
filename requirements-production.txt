@@ -22,6 +22,7 @@ pydantic-settings==2.7.1
 
 # AI &amp; ML (Only what you're actually using)
 groq==0.4.1
+anthropic==0.18.0
 
 # HTTP Client
 httpx==0.26.0
