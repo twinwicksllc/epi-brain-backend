@@ -76,7 +76,7 @@ class Settings(BaseSettings):
     AWS_S3_BUCKET: Optional[str] = None
     
     # CORS
-    CORS_ORIGINS: str = "*"  # Allow all origins for development
+    CORS_ORIGINS: str = "https://epibraingenius.com,https://www.epibraingenius.com"  # Production CORS origins
     CORS_ALLOW_CREDENTIALS: bool = True
     
     # Rate Limiting

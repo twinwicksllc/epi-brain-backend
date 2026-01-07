@@ -57,9 +57,20 @@ class CustomCORSMiddleware(BaseHTTPMiddleware):
         
         return response
 
+# Configure CORS based on environment
+if settings.ENVIRONMENT == "production":
+    # Production: Only allow specific frontend domains
+    allowed_origins = [
+        "https://epibraingenius.com",
+        "https://www.epibraingenius.com",
+    ]
+else:
+    # Development: Allow all origins for testing
+    allowed_origins = ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],  # Allow all methods
     allow_headers=["*"],  # Allow all headers
