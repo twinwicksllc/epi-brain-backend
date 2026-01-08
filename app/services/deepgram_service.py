@@ -18,28 +18,28 @@ from sqlalchemy.orm import Session
 class DeepgramVoiceModel:
     """Voice model mapping for personalities and gender preferences"""
     
-    # Female voices (more emotive and natural)
+    # Female voices (based on Deepgram Aura-2 recommendations)
     FEMALE_VOICES = {
-        "personal_friend": "aura-2-helena-en",      # Caring, natural, friendly
-        "sales_agent": "aura-2-thalia-en",         # Clear, confident, energetic
-        "christian_companion": "aura-2-andromeda-en",  # Casual, expressive
-        "psychology_expert": "aura-2-helena-en",   # Reuses Helena for consistency
-        "business_mentor": "aura-2-thalia-en",     # Confident, professional
-        "weight_loss_coach": "aura-2-amalthea-en", # Engaging, cheerful
-        "kids_learning": "aura-2-amalthea-en",     # Engaging, cheerful
-        "customer_service": "aura-2-andromeda-en", # Casual, comfortable
+        "personal_friend": "aura-2-helena-en",      # Caring, natural, friendly - perfect for emotional support
+        "sales_agent": "aura-2-thalia-en",         # Clear, confident, energetic - ideal for sales
+        "christian_companion": "aura-2-helena-en",  # Caring, natural - supportive spiritual guidance
+        "psychology_expert": "aura-2-helena-en",   # Caring, natural, friendly - therapeutic empathy
+        "business_mentor": "aura-2-athena-en",     # Calm, smooth, professional - business authority
+        "weight_loss_coach": "aura-2-thalia-en",   # Clear, confident, energetic - motivational coaching
+        "kids_learning": "aura-2-thalia-en",       # Clear, confident, energetic - engaging for children
+        "customer_service": "aura-2-thalia-en",    # Clear, confident, energetic - efficient problem-solving
     }
     
-    # Male voices (professional and clear)
+    # Male voices (based on Deepgram Aura-2 recommendations)
     MALE_VOICES = {
-        "personal_friend": "aura-2-arcas-en",      # Natural, smooth, clear
-        "sales_agent": "aura-2-apollo-en",        # Confident, comfortable
-        "christian_companion": "aura-2-aries-en", # Warm, energetic
-        "psychology_expert": "aura-2-arcas-en",   # Natural, smooth
-        "business_mentor": "aura-2-apollo-en",    # Confident, professional
-        "weight_loss_coach": "aura-2-arcas-en",   # Natural, energetic
-        "kids_learning": "aura-2-arcas-en",       # Natural, friendly (fallback)
-        "customer_service": "aura-2-apollo-en",   # Confident, neutral
+        "personal_friend": "aura-2-arcas-en",      # Natural, smooth, clear - comfortable conversation
+        "sales_agent": "aura-2-arcas-en",         # Natural, smooth, clear - professional sales
+        "christian_companion": "aura-2-aries-en", # Warm, energetic, caring - supportive guidance
+        "psychology_expert": "aura-2-arcas-en",   # Natural, smooth - therapeutic presence
+        "business_mentor": "aura-2-zeus-en",      # Deep, trustworthy, smooth - authority and experience
+        "weight_loss_coach": "aura-2-aries-en",   # Warm, energetic, caring - motivational support
+        "kids_learning": "aura-2-aries-en",       # Warm, energetic - engaging for children
+        "customer_service": "aura-2-arcas-en",    # Natural, smooth, clear - professional support
     }
     
     @classmethod
