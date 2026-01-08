@@ -139,12 +139,8 @@ async def send_message(
         ai_response = await ai_service.get_response(
             message=chat_request.message,
             mode=chat_request.mode,
-<<<<<<< HEAD
-            conversation_history=conversation_history
-=======
-            conversation_history=conversation.messages,
+            conversation_history=conversation_history,
             user_tier=current_user.tier.value if hasattr(current_user, "tier") else None
->>>>>>> 93b1a6e (feat: tier+mode Groq model selection for chat and scoring)
         )
         
         response_time_ms = int((datetime.utcnow() - start_time).total_seconds() * 1000)
@@ -401,24 +397,15 @@ async def stream_message(
                 ai_service = GroqService()
             else:
                 ai_service = ClaudeService()
-<<<<<<< HEAD
-            
-            # Get streaming response
+
+            # Get streaming response (select model based on user tier)
             # Exclude the last message (current user message) from history to avoid duplicate
             conversation_history = conversation.messages[:-1] if conversation.messages else []
             async for chunk in ai_service.get_streaming_response(
                 message=chat_request.message,
                 mode=chat_request.mode,
-                conversation_history=conversation_history
-=======
-
-            # Get streaming response (select model based on user tier)
-            async for chunk in ai_service.get_streaming_response(
-                message=chat_request.message,
-                mode=chat_request.mode,
-                conversation_history=conversation.messages,
+                conversation_history=conversation_history,
                 user_tier=current_user.tier.value if hasattr(current_user, "tier") else None
->>>>>>> 93b1a6e (feat: tier+mode Groq model selection for chat and scoring)
             ):
                 full_response += chunk
                 yield f"data: {json.dumps({'content': chunk})}\n\n"

@@ -53,13 +53,17 @@ class Settings(BaseSettings):
     }
 
     # Free tier defaults and per-mode overrides
-    GROQ_MODEL_FREE_DEFAULT: str = "groq-compound-mini"
+    GROQ_MODEL_FREE_DEFAULT: str = "groq/compound-mini"
     GROQ_MODEL_MAP_FREE: dict = {
         "psychology_expert": "gpt-oss-20b",
         "personal_friend": "gpt-oss-20b",
         "christian_companion": "gpt-oss-20b",
         "student_tutor": "gpt-oss-20b",
+        "sales_agent": "gpt-oss-20b",
+        "customer_service": "gpt-oss-20b",
         "kids_learning": "llama-3.1-8b-instant",
+        "business_mentor": "gpt-oss-20b",
+        "weight_loss_coach": "gpt-oss-20b",
     }
     
     # Claude API (for production)
