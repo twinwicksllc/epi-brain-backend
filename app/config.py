@@ -47,15 +47,17 @@ class Settings(BaseSettings):
         "personal_friend": "llama-3.3-70b-versatile",
         "christian_companion": "llama-3.3-70b-versatile",
         "student_tutor": "llama-3.3-70b-versatile",
-        "sales_agent": "gpt-oss-20b",
+        "sales_agent": "llama-3.3-70b-versatile",  # Upgraded to 70B for nuanced sales
         "customer_service": "gpt-oss-20b",
         "kids_learning": "llama-3.1-8b-instant",
+        "business_mentor": "llama-3.3-70b-versatile",
+        "weight_loss_coach": "llama-3.3-70b-versatile",
     }
 
     # Free tier defaults and per-mode overrides
     GROQ_MODEL_FREE_DEFAULT: str = "groq/compound-mini"
     GROQ_MODEL_MAP_FREE: dict = {
-        "psychology_expert": "gpt-oss-20b",
+        "psychology_expert": "groq/compound-mini",  # Using compound for web search and tools
         "personal_friend": "gpt-oss-20b",
         "christian_companion": "gpt-oss-20b",
         "student_tutor": "gpt-oss-20b",
