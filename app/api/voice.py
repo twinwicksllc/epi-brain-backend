@@ -12,9 +12,40 @@ from app.database import get_db
 from app.services.deepgram_service import deepgram_tts, DeepgramVoiceModel
 from app.services.voice_tracking import VoiceUsageTracker
 from app.models.user import User
-from app.core.security import get_current_user_from_token
+from app.core.security import verify_token
 
 router = APIRouter()
+
+
+def get_user_from_token(token: str, db: Session) -> Optional[User]:
+    """
+    Get user from JWT token for WebSocket authentication
+    
+    Args:
+        token: JWT access token
+        db: Database session
+    
+    Returns:
+        User object or None if invalid
+    """
+    from uuid import UUID
+    
+    # Verify and decode token
+    payload = verify_token(token, token_type="access")
+    
+    if payload is None:
+        return None
+    
+    # Extract user_id from payload
+    user_id: Optional[str] = payload.get("sub")
+    
+    if user_id is None:
+        return None
+    
+    # Get user from database
+    user = db.query(User).filter(User.id == UUID(user_id)).first()
+    
+    return user
 
 
 @router.websocket("/stream")
@@ -48,7 +79,9 @@ async def voice_stream(
         db = next(get_db())
         
         try:
-            user = get_current_user_from_token(token, db)
+            user = get_user_from_token(token, db)
+            if not user:
+                raise Exception("User not found or invalid token")
         except Exception as e:
             await websocket.send_json({
                 "type": "error",
@@ -175,12 +208,12 @@ async def get_voice_stats(
     db: Session = Depends(get_db)
 ):
     """Get voice usage statistics for current user"""
-    try:
-        user = get_current_user_from_token(token, db)
-    except Exception as e:
+    user = get_user_from_token(token, db)
+    
+    if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Authentication failed: {str(e)}"
+            detail="Invalid authentication token"
         )
     
     tracker = VoiceUsageTracker(db)
@@ -211,12 +244,12 @@ async def check_voice_access(
     db: Session = Depends(get_db)
 ):
     """Check if user can use voice feature"""
-    try:
-        user = get_current_user_from_token(token, db)
-    except Exception as e:
+    user = get_user_from_token(token, db)
+    
+    if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Authentication failed: {str(e)}"
+            detail="Invalid authentication token"
         )
     
     tracker = VoiceUsageTracker(db)
