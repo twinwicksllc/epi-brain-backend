@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     
     # JWT
     JWT_SECRET_KEY: str = ""
+    
+    # Deepgram TTS
+    DEEPGRAM_API_KEY: str = ""
+    DEEPGRAM_MODEL: str = "aura-2"  # Aura-2 model for high-quality TTS
+    DEEPGRAM_ENCODING: str = "linear16"  # 16-bit PCM WAV
+    DEEPGRAM_SAMPLE_RATE: int = 24000  # 24kHz sample rate
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
@@ -155,6 +161,13 @@ class Settings(BaseSettings):
     DEPTH_LLM_THRESHOLD: float = 0.6  # When to use LLM
     DEPTH_MIN_MESSAGE_LENGTH: int = 20  # Ignore very short messages
     DEPTH_RAPID_MESSAGE_WINDOW: int = 5  # Seconds to batch rapid messages
+    
+    # Voice/TTS Configuration
+    VOICE_ENABLED: bool = True
+    VOICE_COST_PER_CHAR: float = 0.000030  # $0.03 per 1,000 characters
+    VOICE_FREE_LIMIT: int = 10  # FREE tier: 10 voice responses per day
+    VOICE_PRO_LIMIT: int = 999999  # PRO tier: unlimited (effectively)
+    VOICE_ALERT_THRESHOLD: float = 400.0  # Alert at $400/month cost
     
     class Config:
         env_file = ".env"
