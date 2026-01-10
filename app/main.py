@@ -5,10 +5,6 @@ FastAPI Application Entry Point
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-from starlette.responses import Response
 import logging
 
 from app.config import settings
@@ -35,28 +31,6 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# Configure CORS - Allow all origins for development
-# Custom CORS middleware as backup
-class CustomCORSMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        response = await call_next(request)
-        
-        # Add CORS headers to every response
-        response.headers["Access-Control-Allow-Origin"] = "*"
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-        response.headers["Access-Control-Allow-Headers"] = "*"
-        response.headers["Access-Control-Allow-Credentials"] = "true"
-        
-        # Handle preflight requests
-        if request.method == "OPTIONS":
-            response = Response()
-            response.headers["Access-Control-Allow-Origin"] = "*"
-            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-            response.headers["Access-Control-Allow-Headers"] = "*"
-            response.headers["Access-Control-Allow-Credentials"] = "true"
-        
-        return response
-
 # Configure CORS based on environment
 if settings.ENVIRONMENT == "production":
     # Production: Only allow specific frontend domains
@@ -64,20 +38,30 @@ if settings.ENVIRONMENT == "production":
         "https://epibraingenius.com",
         "https://www.epibraingenius.com",
     ]
+    # Explicitly allow common headers including Authorization
+    allowed_headers = [
+        "Accept",
+        "Accept-Language",
+        "Content-Language",
+        "Content-Type",
+        "Authorization",
+        "Origin",
+        "Referer",
+        "User-Agent",
+    ]
 else:
     # Development: Allow all origins for testing
     allowed_origins = ["*"]
+    allowed_headers = ["*"]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],  # Allow all methods
-    allow_headers=["*"],  # Allow all headers
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=allowed_headers,
+    expose_headers=["*"],
 )
-
-# Add custom CORS middleware as backup
-app.add_middleware(CustomCORSMiddleware)
 
 
 # Root endpoint
