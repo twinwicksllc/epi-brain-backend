@@ -60,12 +60,20 @@ async def get_voice_stats(
         daily_limit = 10  # FREE tier limit
         remaining = max(0, daily_limit - daily_usage)
     
+    # Ensure daily_limit is properly set
+    if user.tier in ["PRO", "ENTERPRISE"]:
+        daily_limit = 999999  # Show as unlimited
+        remaining = "unlimited"
+    else:
+        daily_limit = 10  # FREE tier limit
+        remaining = max(0, daily_limit - daily_usage)
+    
     return {
         "user_id": str(user.id),
         "tier": user.tier,
         "daily_usage": daily_usage,
         "daily_limit": daily_limit,
-        "remaining": max(0, daily_limit - daily_usage),
+        "remaining": remaining if remaining != "unlimited" else "unlimited",
         "monthly_usage": monthly_usage,
         "unlimited": user.tier in ["PRO", "ENTERPRISE"]
     }
