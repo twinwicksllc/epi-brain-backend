@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisco
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.core.security import verify_token
+from app.core.dependencies import get_current_active_user
 from app.models.user import User
 from app.models.voice_usage import VoiceUsage
 from app.services.deepgram_service import deepgram_service
@@ -26,53 +27,16 @@ async def test_voice_api():
     return {"status": "Voice API is loaded and working", "version": "1.0.0"}
 voice_tracking = VoiceUsageTracker
 
-# Helper function to get user from token
-def get_user_from_token(authorization: Optional[str] = None) -> Optional[User]:
-    """Get user from authorization token."""
-    if not authorization:
-        return None
-    
-    try:
-        # Extract token from "Bearer <token>" format
-        if authorization.startswith("Bearer "):
-            token = authorization[7:]
-        else:
-            token = authorization
-        
-        # Verify token and get user
-        payload = verify_token(token)
-        if payload is None:
-            return None
-        
-        user_id = payload.get("sub")
-        if not user_id:
-            return None
-        
-        # Get user from database
-        from app.database import SessionLocal
-        db = SessionLocal()
-        try:
-            user = db.query(User).filter(User.id == user_id).first()
-            return user
-        finally:
-            db.close()
-    
-    except Exception as e:
-        logger.error(f"Error getting user from token: {e}")
-        return None
+
 
 
 @router.get("/stats")
 async def get_voice_stats(
-    authorization: str = Query(None, description="Authorization token"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user)
 ):
     """Get voice usage statistics for the current user."""
-    # Get user from token (support both query param and header)
-    user = get_user_from_token(authorization)
-    
-    if not user:
-        raise HTTPException(status_code=401, detail="Invalid or missing token")
+    user = current_user
     
     # Get today's usage using VoiceUsageTracker
     tracker = VoiceUsageTracker(db)
