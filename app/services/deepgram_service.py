@@ -1,237 +1,172 @@
 """
-Deepgram TTS Service
-Handles text-to-speech conversion using Deepgram Aura-2 model
-"""
+Deepgram Text-to-Speech (TTS) Service using WebSocket API.
 
+Provides streaming TTS with Deepgram Aura models.
+"""
 import asyncio
 import json
-from typing import Optional, AsyncGenerator
+import logging
+from typing import Optional
 import websockets
-from datetime import datetime
-
 from app.config import settings
-from app.models.voice_usage import VoiceUsage
-from app.database import get_db
-from sqlalchemy.orm import Session
 
+logger = logging.getLogger(__name__)
 
-class DeepgramVoiceModel:
-    """Voice model mapping for personalities and gender preferences"""
-    
-    # Female voices (based on Deepgram Aura-2 recommendations)
-    FEMALE_VOICES = {
-        "personal_friend": "aura-2-helena-en",      # Caring, natural, friendly - perfect for emotional support
-        "sales_agent": "aura-2-thalia-en",         # Clear, confident, energetic - ideal for sales
-        "christian_companion": "aura-2-helena-en",  # Caring, natural - supportive spiritual guidance
-        "psychology_expert": "aura-2-helena-en",   # Caring, natural, friendly - therapeutic empathy
-        "business_mentor": "aura-2-athena-en",     # Calm, smooth, professional - business authority
-        "weight_loss_coach": "aura-2-thalia-en",   # Clear, confident, energetic - motivational coaching
-        "kids_learning": "aura-2-thalia-en",       # Clear, confident, energetic - engaging for children
-        "customer_service": "aura-2-thalia-en",    # Clear, confident, energetic - efficient problem-solving
+# Voice model mappings for personality modes
+VOICE_MODELS = {
+    "personal_friend": {
+        "male": "aura-arcas-en",
+        "female": "aura-asteria-en"
+    },
+    "sales_agent": {
+        "male": "aura-luna-en",  # Persuasive, confident
+        "female": "aura-asteria-en"
+    },
+    "student_tutor": {
+        "male": "aura-arcas-en",
+        "female": "aura-asteria-en"
+    },
+    "kids_learning": {
+        "male": "orca-v2",  # More playful
+        "female": "aura-luna-en"
+    },
+    "christian_companion": {
+        "male": "aura-orion-en",  # Deep, warm
+        "female": "aura-asteria-en"
+    },
+    "customer_service": {
+        "male": "aura-arcas-en",
+        "female": "aura-luna-en"
+    },
+    "psychology_expert": {
+        "male": "aura-orion-en",
+        "female": "athena"  # Professional, calm
+    },
+    "business_mentor": {
+        "male": "zeus",  # Deep, authoritative
+        "female": "athena"
+    },
+    "weight_loss_coach": {
+        "male": "arcas",
+        "female": "luna"
     }
-    
-    # Male voices (based on Deepgram Aura-2 recommendations)
-    MALE_VOICES = {
-        "personal_friend": "aura-2-arcas-en",      # Natural, smooth, clear - comfortable conversation
-        "sales_agent": "aura-2-arcas-en",         # Natural, smooth, clear - professional sales
-        "christian_companion": "aura-2-aries-en", # Warm, energetic, caring - supportive guidance
-        "psychology_expert": "aura-2-arcas-en",   # Natural, smooth - therapeutic presence
-        "business_mentor": "aura-2-zeus-en",      # Deep, trustworthy, smooth - authority and experience
-        "weight_loss_coach": "aura-2-aries-en",   # Warm, energetic, caring - motivational support
-        "kids_learning": "aura-2-aries-en",       # Warm, energetic - engaging for children
-        "customer_service": "aura-2-arcas-en",    # Natural, smooth, clear - professional support
-    }
-    
-    @classmethod
-    def get_voice_model(cls, personality: str, gender: str = "female") -> str:
-        """Get the appropriate voice model for personality and gender"""
-        gender = gender.lower() if gender else "female"
-        
-        if gender == "male":
-            return cls.MALE_VOICES.get(personality, cls.MALE_VOICES["personal_friend"])
-        else:
-            return cls.FEMALE_VOICES.get(personality, cls.FEMALE_VOICES["personal_friend"])
-    
-    @classmethod
-    def get_available_personalities(cls) -> list:
-        """Get list of personalities that support voice"""
-        return list(cls.FEMALE_VOICES.keys())
+}
 
 
-class DeepgramTTS:
-    """Deepgram Text-to-Speech service"""
-    
-    # Personalities with voice disabled
-    VOICE_DISABLED_PERSONALITIES = [
-        "student_tutor",  # Text-only as per requirements
-    ]
+class DeepgramService:
+    """Service for Deepgram TTS using WebSocket API."""
     
     def __init__(self):
         self.api_key = settings.DEEPGRAM_API_KEY
-        self.model = settings.DEEPGRAM_MODEL
-        self.encoding = settings.DEEPGRAM_ENCODING
-        self.sample_rate = settings.DEEPGRAM_SAMPLE_RATE
-        self.cost_per_char = settings.VOICE_COST_PER_CHAR
+        # Use stable Aura-1 models for reliability
+        self.base_url = "wss://api.deepgram.com/v1/speak"
         
-        if not self.api_key:
-            raise ValueError("DEEPGRAM_API_KEY not configured in environment variables")
-    
-    def is_voice_enabled(self, personality: str) -> bool:
-        """Check if voice is enabled for a personality"""
-        return personality not in self.VOICE_DISABLED_PERSONALITIES
-    
-    def get_voice_model(self, personality: str, gender: str = "female") -> str:
-        """Get voice model for personality and gender"""
-        return DeepgramVoiceModel.get_voice_model(personality, gender)
+    def get_voice_model(self, personality_mode: str, gender: str = "male") -> str:
+        """Get the voice model for a given personality mode and gender."""
+        if personality_mode not in VOICE_MODELS:
+            logger.warning(f"Unknown personality mode: {personality_mode}, using default")
+            return VOICE_MODELS["personal_friend"][gender]
+        
+        return VOICE_MODELS[personality_mode].get(gender, VOICE_MODELS[personality_mode]["male"])
     
     async def stream_tts(
         self,
         text: str,
-        personality: str,
-        gender: str = "female",
-        user_id: Optional[str] = None
-    ) -> AsyncGenerator[bytes, None]:
+        personality_mode: str = "personal_friend",
+        gender: str = "male",
+        sample_rate: int = 24000
+    ) -> bytes:
         """
-        Stream TTS audio from Deepgram via WebSocket
+        Stream TTS audio using WebSocket API.
         
         Args:
             text: Text to convert to speech
-            personality: Personality mode
-            gender: Voice gender preference ('male' or 'female')
-            user_id: User ID for usage tracking
+            personality_mode: Personality mode for voice selection
+            gender: Voice gender (male/female)
+            sample_rate: Audio sample rate (default 24000)
             
-        Yields:
-            Audio chunks as bytes
+        Returns:
+            Raw audio bytes (PCM16 format)
         """
-        voice_model = self.get_voice_model(personality, gender)
+        voice_model = self.get_voice_model(personality_mode, gender)
         
-        # Calculate cost
-        character_count = len(text)
-        cost = character_count * self.cost_per_char
+        # Build WebSocket URL with parameters
+        url = f"{self.base_url}?model={voice_model}&encoding=linear16&sample_rate={sample_rate}"
         
-        # WebSocket URL for Deepgram TTS
-        url = f"wss://api.deepgram.com/v1/speak?model={voice_model}&encoding={self.encoding}&sample_rate={self.sample_rate}"
-        
-        # Create WebSocket connection
-        extra_headers = {
+        headers = {
             "Authorization": f"Token {self.api_key}"
         }
         
+        audio_buffer = []
+        
         try:
-            print(f"Connecting to Deepgram TTS WebSocket: {url}")
-            async with websockets.connect(url, extra_headers=extra_headers) as websocket:
-                print(f"Connected to Deepgram TTS WebSocket")
-                # Send text for synthesis
-                message = {
+            logger.info(f"Connecting to Deepgram WebSocket: {url}")
+            
+            async with websockets.connect(url, extra_headers=headers) as websocket:
+                # Send the Speak message
+                speak_message = {
                     "type": "Speak",
                     "text": text
                 }
-                print(f"Sending Speak message: {message}")
-                await websocket.send(json.dumps(message))
                 
-                # Send Flush to trigger audio generation
-                print(f"Sending Flush message")
-                await websocket.send(json.dumps({"type": "Flush"}))
-            
-            # Receive audio chunks
-                total_bytes = 0
-                chunk_count = 0
-                while True:
-                    try:
-                        message = await websocket.recv()
-                        
+                logger.info(f"Sending Speak message for text: {text[:50]}...")
+                await websocket.send(json.dumps(speak_message))
+                
+                # Wait for audio chunks
+                # Set a timeout to avoid hanging forever
+                timeout = 30  # 30 seconds total timeout
+                
+                try:
+                    async for message in asyncio.wait_for(websocket.iter_messages(), timeout=timeout):
+                        # Handle binary messages (audio data)
                         if isinstance(message, bytes):
-                            # Audio data
-                            chunk_count += 1
-                            total_bytes += len(message)
-                            print(f"Received audio chunk {chunk_count}, size: {len(message)} bytes, total: {total_bytes} bytes")
-                            yield message
+                            audio_size = len(message)
+                            audio_buffer.append(message)
+                            logger.info(f"Received {audio_size} bytes of audio data (total: {sum(len(a) for a in audio_buffer)} bytes)")
                         
+                        # Handle text messages (metadata, events)
                         elif isinstance(message, str):
-                            # Metadata or control message
-                            data = json.loads(message)
-                            print(f"Received text message: {data}")
-                            
-                            if data.get("type") == "SpeakStarted":
-                                print("Speech generation started")
-                                continue
-                            
-                            elif data.get("type") == "SpeakEnd":
-                                # Stream complete
-                                print(f"Speech generation complete: {chunk_count} chunks, {total_bytes} bytes")
-                                break
-                            
-                            elif data.get("type") == "Metadata":
-                                # Extract duration if available
-                                metadata = data.get("metadata", {})
-                                duration = metadata.get("duration_seconds", 0)
-                                print(f"Received metadata: duration={duration}s")
+                            try:
+                                data = json.loads(message)
+                                msg_type = data.get("type", "")
                                 
-                                # Track usage
-                                if user_id:
-                                    await self._track_usage(
-                                        user_id=user_id,
-                                        personality=personality,
-                                        voice_gender=gender,
-                                        character_count=character_count,
-                                        cost=cost,
-                                        duration_seconds=duration
-                                    )
-                                break
-                            
-                    except websockets.exceptions.ConnectionClosed:
-                        print("Deepgram WebSocket connection closed")
-                        break
+                                if msg_type == "Metadata":
+                                    logger.info(f"Received Metadata: {data}")
+                                elif msg_type == "Flushed":
+                                    logger.info("Received Flushed event - audio generation complete")
+                                    break  # Stop receiving, audio is done
+                                elif msg_type == "Warning":
+                                    logger.warning(f"Deepgram warning: {data}")
+                                elif msg_type == "Error":
+                                    logger.error(f"Deepgram error: {data}")
+                                    break
+                                else:
+                                    logger.info(f"Received message type: {msg_type}")
+                            except json.JSONDecodeError:
+                                logger.warning(f"Could not parse JSON message: {message}")
                 
-                # Send Close message
-                print("Sending Close message")
-                await websocket.send(json.dumps({"type": "Close"}))
-        except Exception as e:
-            print(f"Deepgram TTS WebSocket error: {str(e)}")
-            import traceback
-            traceback.print_exc()
+                except asyncio.TimeoutError:
+                    logger.warning(f"WebSocket timeout after {timeout} seconds")
+                
+                # Don't send Close - let WebSocket context manager handle it
+                logger.info(f"Audio streaming complete. Total audio bytes: {sum(len(a) for a in audio_buffer)}")
+                
+                # Combine all audio chunks
+                if audio_buffer:
+                    combined_audio = b"".join(audio_buffer)
+                    logger.info(f"Combined audio size: {len(combined_audio)} bytes")
+                    return combined_audio
+                else:
+                    logger.warning("No audio data received from Deepgram")
+                    return b""
+                    
+        except websockets.exceptions.WebSocketException as e:
+            logger.error(f"WebSocket error: {e}")
             raise
-    
-    async def _track_usage(
-        self,
-        user_id: str,
-        personality: str,
-        voice_gender: str,
-        character_count: int,
-        cost: float,
-        duration_seconds: float
-    ):
-        """Track TTS usage in database"""
-        try:
-            db = next(get_db())
-            
-            voice_usage = VoiceUsage(
-                user_id=user_id,
-                personality_mode=personality,
-                voice_gender=voice_gender,
-                character_count=character_count,
-                cost=cost,
-                duration_seconds=duration_seconds,
-                date=datetime.utcnow()
-            )
-            
-            db.add(voice_usage)
-            db.commit()
-            
         except Exception as e:
-            # Log error but don't break TTS stream
-            print(f"Error tracking voice usage: {e}")
-        finally:
-            db.close()
-    
-    def calculate_daily_cost(self, usage_records: list[VoiceUsage]) -> float:
-        """Calculate total cost from usage records"""
-        return sum(record.cost for record in usage_records)
-    
-    def get_daily_character_count(self, usage_records: list[VoiceUsage]) -> int:
-        """Get total character count from usage records"""
-        return sum(record.character_count for record in usage_records)
+            logger.error(f"Error streaming TTS: {e}")
+            raise
 
 
 # Singleton instance
-deepgram_tts = DeepgramTTS()
+deepgram_service = DeepgramService()

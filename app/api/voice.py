@@ -1,262 +1,252 @@
 """
-Voice API Endpoints
-WebSocket and REST endpoints for text-to-speech functionality
+Voice API endpoints for Text-to-Speech functionality.
+
+Provides WebSocket streaming and REST endpoints for voice generation.
 """
-
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+import logging
 from typing import Optional
-import json
-
-from app.database import get_db
-from app.services.deepgram_service import deepgram_tts, DeepgramVoiceModel
-from app.services.voice_tracking import VoiceUsageTracker
-from app.models.user import User
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, Query
+from sqlalchemy.orm import Session
+from app.core.database import get_db
 from app.core.security import verify_token
-from app.core.dependencies import get_current_active_user
+from app.models.user import User
+from app.models.voice_usage import VoiceUsage
+from app.services.deepgram_service import deepgram_service
+from app.services.voice_tracking import VoiceTrackingService
+from app.config import settings
+from datetime import datetime
 
-router = APIRouter()
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/api/v1/voice", tags=["Voice"])
+voice_tracking = VoiceTrackingService()
 
-
-def get_user_from_token(token: str, db: Session) -> Optional[User]:
-    """
-    Get user from JWT token for WebSocket authentication
-    
-    Args:
-        token: JWT access token
-        db: Database session
-    
-    Returns:
-        User object or None if invalid
-    """
-    from uuid import UUID
-    
-    # Verify and decode token
-    payload = verify_token(token, token_type="access")
-    
-    if payload is None:
+# Helper function to get user from token
+def get_user_from_token(authorization: Optional[str] = None) -> Optional[User]:
+    """Get user from authorization token."""
+    if not authorization:
         return None
-    
-    # Extract user_id from payload
-    user_id: Optional[str] = payload.get("sub")
-    
-    if user_id is None:
-        return None
-    
-    # Get user from database
-    user = db.query(User).filter(User.id == UUID(user_id)).first()
-    
-    return user
-
-
-@router.websocket("/stream")
-async def voice_stream(
-    websocket: WebSocket,
-    token: Optional[str] = None
-):
-    """
-    WebSocket endpoint for streaming TTS audio
-    
-    Client should send messages with format:
-    {
-        "type": "speak",
-        "text": "text to speak",
-        "personality": "personal_friend",
-        "gender": "female"
-    }
-    """
-    await websocket.accept()
     
     try:
-        # Authenticate user from token
-        if not token:
-            await websocket.send_json({
-                "type": "error",
-                "message": "Authentication token required"
-            })
-            await websocket.close()
-            return
+        # Extract token from "Bearer <token>" format
+        if authorization.startswith("Bearer "):
+            token = authorization[7:]
+        else:
+            token = authorization
         
-        db = next(get_db())
+        # Verify token and get user
+        payload = verify_token(token)
+        if payload is None:
+            return None
         
+        user_id = payload.get("sub")
+        if not user_id:
+            return None
+        
+        # Get user from database
+        from app.core.database import SessionLocal
+        db = SessionLocal()
         try:
-            user = get_user_from_token(token, db)
-            if not user:
-                raise Exception("User not found or invalid token")
-        except Exception as e:
-            await websocket.send_json({
-                "type": "error",
-                "message": f"Authentication failed: {str(e)}"
-            })
-            await websocket.close()
-            return
-        
-        # Initialize usage tracker
-        tracker = VoiceUsageTracker(db)
-        
-        # Check voice limits
-        can_use, reason = tracker.can_use_voice(str(user.id), user.tier)
-        
-        if not can_use:
-            await websocket.send_json({
-                "type": "error",
-                "message": reason,
-                "error_code": "limit_exceeded"
-            })
-            await websocket.close()
-            return
-        
-        await websocket.send_json({
-            "type": "connected",
-            "message": "Voice stream connected",
-            "user_id": str(user.id),
-            "tier": user.tier,
-            "voice_preference": user.voice_preference.value if user.voice_preference else "female"
-        })
-        
-        # Handle incoming messages
-        while True:
-            data = await websocket.receive_text()
-            message = json.loads(data)
-            
-            if message.get("type") == "speak":
-                text = message.get("text", "")
-                personality = message.get("personality", "personal_friend")
-                gender = message.get("gender", user.voice_preference.value if user.voice_preference else "female")
-                
-                # Validate personality
-                if personality not in DeepgramVoiceModel.get_available_personalities():
-                    await websocket.send_json({
-                        "type": "error",
-                        "message": f"Invalid personality: {personality}"
-                    })
-                    continue
-                
-                # Check if voice is enabled for personality
-                if not deepgram_tts.is_voice_enabled(personality):
-                    await websocket.send_json({
-                        "type": "error",
-                        "message": f"Voice not enabled for {personality}",
-                        "error_code": "voice_disabled"
-                    })
-                    continue
-                
-                # Get voice model
-                voice_model = deepgram_tts.get_voice_model(personality, gender)
-                
-                await websocket.send_json({
-                    "type": "speak_start",
-                    "voice_model": voice_model,
-                    "personality": personality,
-                    "gender": gender
-                })
-                
-                # Stream TTS audio
-                try:
-                    print(f"Starting TTS generation for text: {text[:50]}...")
-                    chunk_count = 0
-                    total_bytes = 0
-                    
-                    async for audio_chunk in deepgram_tts.stream_tts(
-                        text=text,
-                        personality=personality,
-                        gender=gender,
-                        user_id=str(user.id)
-                    ):
-                        # Send audio chunk to client
-                        chunk_count += 1
-                        total_bytes += len(audio_chunk)
-                        print(f"Sending audio chunk {chunk_count}, size: {len(audio_chunk)} bytes")
-                        await websocket.send_bytes(audio_chunk)
-                    
-                    print(f"TTS complete: {chunk_count} chunks, {total_bytes} total bytes")
-                    await websocket.send_json({
-                        "type": "speak_complete",
-                        "message": "Audio generation complete"
-                    })
-                    
-                except Exception as e:
-                    print(f"TTS error: {str(e)}")
-                    import traceback
-                    traceback.print_exc()
-                    await websocket.send_json({
-                        "type": "error",
-                        "message": f"TTS error: {str(e)}"
-                    })
-            
-            elif message.get("type") == "ping":
-                await websocket.send_json({
-                    "type": "pong"
-                })
-            
-            elif message.get("type") == "close":
-                await websocket.send_json({
-                    "type": "closing",
-                    "message": "Closing connection"
-                })
-                break
-    
-    except WebSocketDisconnect:
-        print(f"WebSocket disconnected: user_id={user.id if 'user' in locals() else 'unknown'}")
+            user = db.query(User).filter(User.id == user_id).first()
+            return user
+        finally:
+            db.close()
     
     except Exception as e:
-        print(f"WebSocket error: {str(e)}")
-        try:
-            await websocket.send_json({
-                "type": "error",
-                "message": f"Server error: {str(e)}"
-            })
-        except:
-            pass
-    
-    finally:
-        if 'db' in locals():
-            db.close()
+        logger.error(f"Error getting user from token: {e}")
+        return None
 
 
 @router.get("/stats")
 async def get_voice_stats(
-    current_user: User = Depends(get_current_active_user),
+    authorization: str = Query(None, description="Authorization token"),
     db: Session = Depends(get_db)
 ):
-    """Get voice usage statistics for current user"""
-    tracker = VoiceUsageTracker(db)
-    stats = tracker.get_user_stats(str(current_user.id))
+    """Get voice usage statistics for the current user."""
+    # Get user from token (support both query param and header)
+    user = get_user_from_token(authorization)
+    
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid or missing token")
+    
+    # Get today's usage
+    today = datetime.utcnow().date()
+    daily_usage = voice_tracking.get_daily_usage(db, user.id, today)
+    
+    # Get monthly usage
+    monthly_usage = voice_tracking.get_monthly_usage(db, user.id, today.year, today.month)
+    
+    # Get limits
+    daily_limit = voice_tracking.get_daily_limit(user.tier)
     
     return {
-        "status": "success",
-        "data": stats
+        "user_id": str(user.id),
+        "tier": user.tier,
+        "daily_usage": daily_usage,
+        "daily_limit": daily_limit,
+        "remaining": max(0, daily_limit - daily_usage),
+        "monthly_usage": monthly_usage,
+        "unlimited": user.tier in ["PRO", "ENTERPRISE"]
     }
 
 
 @router.get("/available-voices")
 async def get_available_voices():
-    """Get list of available voices for each personality"""
+    """Get list of available voice models for all personality modes."""
     return {
-        "status": "success",
-        "data": {
-            "female_voices": DeepgramVoiceModel.FEMALE_VOICES,
-            "male_voices": DeepgramVoiceModel.MALE_VOICES,
-            "disabled_personalities": deepgram_tts.VOICE_DISABLED_PERSONALITIES
+        "voices": {
+            "personal_friend": {
+                "male": "aura-arcas-en",
+                "female": "aura-asteria-en"
+            },
+            "sales_agent": {
+                "male": "aura-luna-en",
+                "female": "aura-asteria-en"
+            },
+            "student_tutor": {
+                "male": "aura-arcas-en",
+                "female": "aura-asteria-en"
+            },
+            "kids_learning": {
+                "male": "orca-v2",
+                "female": "aura-luna-en"
+            },
+            "christian_companion": {
+                "male": "aura-orion-en",
+                "female": "aura-asteria-en"
+            },
+            "customer_service": {
+                "male": "aura-arcas-en",
+                "female": "aura-luna-en"
+            },
+            "psychology_expert": {
+                "male": "aura-orion-en",
+                "female": "athena"
+            },
+            "business_mentor": {
+                "male": "zeus",
+                "female": "athena"
+            },
+            "weight_loss_coach": {
+                "male": "arcas",
+                "female": "luna"
+            }
         }
     }
 
 
-@router.get("/can-use-voice")
-async def check_voice_access(
-    current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
-):
-    """Check if user can use voice feature"""
-    tracker = VoiceUsageTracker(db)
-    can_use, reason = tracker.can_use_voice(str(current_user.id), current_user.tier)
+@router.websocket("/stream")
+async def websocket_voice_stream(websocket: WebSocket):
+    """
+    WebSocket endpoint for streaming TTS audio.
     
-    return {
-        "status": "success",
-        "data": {
-            "can_use_voice": can_use,
-            "reason": reason,
-            "tier": user.tier,
-            "voice_preference": user.voice_preference.value if user.voice_preference else "none"
-        }
-    }
+    Client sends: {"text": "Hello", "gender": "male", "mode": "personal_friend"}
+    Server sends: Binary audio chunks (PCM16 format)
+    """
+    await websocket.accept()
+    
+    try:
+        # Get token from query parameter
+        token = websocket.query_params.get("token")
+        if not token:
+            await websocket.send_json({"error": "Missing token"})
+            await websocket.close()
+            return
+        
+        # Verify token and get user
+        payload = verify_token(token)
+        if not payload:
+            await websocket.send_json({"error": "Invalid token"})
+            await websocket.close()
+            return
+        
+        user_id = payload.get("sub")
+        
+        # Receive message from client
+        message = await websocket.receive_json()
+        text = message.get("text", "")
+        gender = message.get("gender", "male")
+        mode = message.get("mode", "personal_friend")
+        
+        if not text:
+            await websocket.send_json({"error": "No text provided"})
+            await websocket.close()
+            return
+        
+        logger.info(f"WebSocket voice request - User: {user_id}, Mode: {mode}, Gender: {gender}, Text: {text[:50]}...")
+        
+        # Check voice limits (skip for student_tutor - disabled)
+        if mode == "student_tutor":
+            logger.info("Voice disabled for student_tutor mode")
+            await websocket.send_json({"error": "Voice disabled for this mode"})
+            await websocket.close()
+            return
+        
+        # Get user from database for tier checking
+        from app.core.database import SessionLocal
+        db = SessionLocal()
+        try:
+            user = db.query(User).filter(User.id == user_id).first()
+            
+            if not user:
+                await websocket.send_json({"error": "User not found"})
+                await websocket.close()
+                return
+            
+            # Check daily limits for FREE tier
+            if user.tier == "FREE":
+                today = datetime.utcnow().date()
+                daily_usage = voice_tracking.get_daily_usage(db, user.id, today)
+                daily_limit = voice_tracking.get_daily_limit(user.tier)
+                
+                if daily_usage >= daily_limit:
+                    await websocket.send_json({"error": f"Daily voice limit reached ({daily_limit} uses)"})
+                    await websocket.close()
+                    return
+        
+        finally:
+            db.close()
+        
+        # Stream TTS audio
+        try:
+            logger.info(f"Starting TTS stream for: {text[:100]}...")
+            audio_data = await deepgram_service.stream_tts(text, mode, gender)
+            
+            if audio_data:
+                logger.info(f"Generated {len(audio_data)} bytes of audio, streaming to client")
+                
+                # Send audio data to client
+                await websocket.send_bytes(audio_data)
+                logger.info("Audio data sent successfully")
+                
+                # Track usage
+                from app.core.database import SessionLocal
+                db = SessionLocal()
+                try:
+                    voice_tracking.record_usage(
+                        db=db,
+                        user_id=user_id,
+                        mode=mode,
+                        character_count=len(text),
+                        bytes_generated=len(audio_data),
+                        cost_estimate=len(audio_data) / 1000 * 0.03  # $0.03 per 1000 characters
+                    )
+                    db.commit()
+                except Exception as e:
+                    logger.error(f"Error tracking voice usage: {e}")
+                    db.rollback()
+                finally:
+                    db.close()
+            else:
+                logger.error("No audio data received from Deepgram")
+                await websocket.send_json({"error": "Failed to generate audio"})
+        
+        except Exception as e:
+            logger.error(f"Error streaming TTS: {e}", exc_info=True)
+            await websocket.send_json({"error": f"TTS generation failed: {str(e)}"})
+    
+    except WebSocketDisconnect:
+        logger.info("WebSocket disconnected by client")
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}", exc_info=True)
+    finally:
+        await websocket.close()
