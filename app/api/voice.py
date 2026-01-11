@@ -7,7 +7,7 @@ import logging
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, Query
 from sqlalchemy.orm import Session
-from app.core.database import get_db
+from app.database import get_db
 from app.core.security import verify_token
 from app.models.user import User
 from app.models.voice_usage import VoiceUsage
@@ -43,7 +43,7 @@ def get_user_from_token(authorization: Optional[str] = None) -> Optional[User]:
             return None
         
         # Get user from database
-        from app.core.database import SessionLocal
+        from app.database import SessionLocal
         db = SessionLocal()
         try:
             user = db.query(User).filter(User.id == user_id).first()
@@ -182,7 +182,7 @@ async def websocket_voice_stream(websocket: WebSocket):
             return
         
         # Get user from database for tier checking
-        from app.core.database import SessionLocal
+        from app.database import SessionLocal
         db = SessionLocal()
         try:
             user = db.query(User).filter(User.id == user_id).first()
@@ -219,7 +219,7 @@ async def websocket_voice_stream(websocket: WebSocket):
                 logger.info("Audio data sent successfully")
                 
                 # Track usage
-                from app.core.database import SessionLocal
+                from app.database import SessionLocal
                 db = SessionLocal()
                 try:
                     voice_tracking.record_usage(
