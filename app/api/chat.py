@@ -223,17 +223,30 @@ async def get_conversation(
     Returns:
         Conversation with messages
     """
-    conversation = db.query(Conversation).filter(
-        Conversation.id == conversation_id
-    ).first()
-    
-    if not conversation:
-        raise ConversationNotFound()
-    
-    if conversation.user_id != current_user.id:
-        raise UnauthorizedAccess()
-    
-    return conversation
+    try:
+        logger.info(f"Getting conversation {conversation_id} for user {current_user.id}")
+        
+        conversation = db.query(Conversation).filter(
+            Conversation.id == conversation_id
+        ).first()
+        
+        if not conversation:
+            logger.warning(f"Conversation {conversation_id} not found for user {current_user.id}")
+            raise ConversationNotFound()
+        
+        if conversation.user_id != current_user.id:
+            logger.warning(f"User {current_user.id} attempted to access conversation {conversation_id} owned by {conversation.user_id}")
+            raise UnauthorizedAccess()
+        
+        logger.info(f"Successfully retrieved conversation {conversation_id}")
+        return conversation
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except Exception as e:
+        logger.error(f"Error getting conversation {conversation_id}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to get conversation: {str(e)}")
 
 
 @router.post("/conversations", response_model=ConversationResponse)
@@ -401,12 +414,13 @@ async def stream_message(
             # Get streaming response (select model based on user tier)
             # Exclude the last message (current user message) from history to avoid duplicate
             conversation_history = conversation.messages[:-1] if conversation.messages else []
-            async for chunk in ai_service.get_streaming_response(
+            response = await ai_service.get_streaming_response(
                 message=chat_request.message,
                 mode=chat_request.mode,
                 conversation_history=conversation_history,
                 user_tier=current_user.tier.value if hasattr(current_user, "tier") else None
-            ):
+            )
+            async for chunk in response:
                 full_response += chunk
                 yield f"data: {json.dumps({'content': chunk})}\n\n"
 

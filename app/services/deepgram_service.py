@@ -117,7 +117,12 @@ class DeepgramService:
                 timeout = 30  # 30 seconds total timeout
                 
                 try:
-                    async for message in asyncio.wait_for(websocket, timeout=timeout):
+                    # Set timeout for each message
+                    async for message in websocket:
+                        # Check overall timeout
+                        if timeout <= 0:
+                            logger.warning("Timeout reached, stopping audio reception")
+                            break
                         # Handle binary messages (audio data)
                         if isinstance(message, bytes):
                             audio_size = len(message)
