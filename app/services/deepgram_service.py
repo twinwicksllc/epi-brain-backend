@@ -117,61 +117,80 @@ class DeepgramTTS:
             "Authorization": f"Token {self.api_key}"
         }
         
-        async with websockets.connect(url, extra_headers=extra_headers) as websocket:
-            # Send text for synthesis
-            message = {
-                "type": "Speak",
-                "text": text
-            }
-            await websocket.send(json.dumps(message))
-            
-            # Send Flush to trigger audio generation
-            await websocket.send(json.dumps({"type": "Flush"}))
+        try:
+            print(f"Connecting to Deepgram TTS WebSocket: {url}")
+            async with websockets.connect(url, extra_headers=extra_headers) as websocket:
+                print(f"Connected to Deepgram TTS WebSocket")
+                # Send text for synthesis
+                message = {
+                    "type": "Speak",
+                    "text": text
+                }
+                print(f"Sending Speak message: {message}")
+                await websocket.send(json.dumps(message))
+                
+                # Send Flush to trigger audio generation
+                print(f"Sending Flush message")
+                await websocket.send(json.dumps({"type": "Flush"}))
             
             # Receive audio chunks
-            total_bytes = 0
-            while True:
-                try:
-                    message = await websocket.recv()
-                    
-                    if isinstance(message, bytes):
-                        # Audio data
-                        total_bytes += len(message)
-                        yield message
-                    
-                    elif isinstance(message, str):
-                        # Metadata or control message
-                        data = json.loads(message)
+                total_bytes = 0
+                chunk_count = 0
+                while True:
+                    try:
+                        message = await websocket.recv()
                         
-                        if data.get("type") == "SpeakStarted":
-                            continue
+                        if isinstance(message, bytes):
+                            # Audio data
+                            chunk_count += 1
+                            total_bytes += len(message)
+                            print(f"Received audio chunk {chunk_count}, size: {len(message)} bytes, total: {total_bytes} bytes")
+                            yield message
                         
-                        elif data.get("type") == "SpeakEnd":
-                            # Stream complete
-                            break
-                        
-                        elif data.get("type") == "Metadata":
-                            # Extract duration if available
-                            metadata = data.get("metadata", {})
-                            duration = metadata.get("duration_seconds", 0)
+                        elif isinstance(message, str):
+                            # Metadata or control message
+                            data = json.loads(message)
+                            print(f"Received text message: {data}")
                             
-                            # Track usage
-                            if user_id:
-                                await self._track_usage(
-                                    user_id=user_id,
-                                    personality=personality,
-                                    voice_gender=gender,
-                                    character_count=character_count,
-                                    cost=cost,
-                                    duration_seconds=duration
-                                )
-                            break
-                        
-                except websockets.exceptions.ConnectionClosed:
-                    break
-            
-            # Send Close message
-            await websocket.send(json.dumps({"type": "Close"}))
+                            if data.get("type") == "SpeakStarted":
+                                print("Speech generation started")
+                                continue
+                            
+                            elif data.get("type") == "SpeakEnd":
+                                # Stream complete
+                                print(f"Speech generation complete: {chunk_count} chunks, {total_bytes} bytes")
+                                break
+                            
+                            elif data.get("type") == "Metadata":
+                                # Extract duration if available
+                                metadata = data.get("metadata", {})
+                                duration = metadata.get("duration_seconds", 0)
+                                print(f"Received metadata: duration={duration}s")
+                                
+                                # Track usage
+                                if user_id:
+                                    await self._track_usage(
+                                        user_id=user_id,
+                                        personality=personality,
+                                        voice_gender=gender,
+                                        character_count=character_count,
+                                        cost=cost,
+                                        duration_seconds=duration
+                                    )
+                                break
+                            
+                    except websockets.exceptions.ConnectionClosed:
+                        print("Deepgram WebSocket connection closed")
+                        break
+                
+                # Send Close message
+                print("Sending Close message")
+                await websocket.send(json.dumps({"type": "Close"}))
+        except Exception as e:
+            print(f"Deepgram TTS WebSocket error: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            raise
     
     async def _track_usage(
         self,
