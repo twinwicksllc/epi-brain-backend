@@ -12,13 +12,13 @@ from app.core.security import verify_token
 from app.models.user import User
 from app.models.voice_usage import VoiceUsage
 from app.services.deepgram_service import deepgram_service
-from app.services.voice_tracking import VoiceTrackingService
+from app.services.voice_tracking import VoiceUsageTracker
 from app.config import settings
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/voice", tags=["Voice"])
-voice_tracking = VoiceTrackingService()
+voice_tracking = VoiceUsageTracker
 
 # Helper function to get user from token
 def get_user_from_token(authorization: Optional[str] = None) -> Optional[User]:
@@ -68,15 +68,27 @@ async def get_voice_stats(
     if not user:
         raise HTTPException(status_code=401, detail="Invalid or missing token")
     
-    # Get today's usage
+    # Get today's usage using VoiceUsageTracker
+    tracker = VoiceUsageTracker(db)
     today = datetime.utcnow().date()
-    daily_usage = voice_tracking.get_daily_usage(db, user.id, today)
+    daily_usage = len(tracker.get_daily_usage(user.id))
     
-    # Get monthly usage
-    monthly_usage = voice_tracking.get_monthly_usage(db, user.id, today.year, today.month)
+    # Get monthly usage (calculate manually)
+    month_start = datetime(today.year, today.month, 1)
+    monthly_usage = len(
+        db.query(VoiceUsage).filter(
+            VoiceUsage.user_id == user.id,
+            VoiceUsage.date >= month_start
+        ).all()
+    )
     
     # Get limits
-    daily_limit = voice_tracking.get_daily_limit(user.tier)
+    if user.tier in ["PRO", "ENTERPRISE"]:
+        daily_limit = 999999  # Unlimited
+        remaining = "unlimited"
+    else:
+        daily_limit = 10  # FREE tier limit
+        remaining = max(0, daily_limit - daily_usage)
     
     return {
         "user_id": str(user.id),
@@ -195,7 +207,8 @@ async def websocket_voice_stream(websocket: WebSocket):
             # Check daily limits for FREE tier
             if user.tier == "FREE":
                 today = datetime.utcnow().date()
-                daily_usage = voice_tracking.get_daily_usage(db, user.id, today)
+                tracker = VoiceUsageTracker(db)
+                daily_usage = len(tracker.get_daily_usage(user.id))
                 daily_limit = voice_tracking.get_daily_limit(user.tier)
                 
                 if daily_usage >= daily_limit:
@@ -222,13 +235,14 @@ async def websocket_voice_stream(websocket: WebSocket):
                 from app.database import SessionLocal
                 db = SessionLocal()
                 try:
-                    voice_tracking.record_usage(
-                        db=db,
+                    tracker = VoiceUsageTracker(db)
+                    tracker.record_usage(
                         user_id=user_id,
-                        mode=mode,
+                        personality=mode,
+                        voice_gender=gender,
                         character_count=len(text),
-                        bytes_generated=len(audio_data),
-                        cost_estimate=len(audio_data) / 1000 * 0.03  # $0.03 per 1000 characters
+                        cost=len(audio_data) / 1000 * 0.03,  # $0.03 per 1000 characters
+                        duration_seconds=0  # TODO: Calculate actual duration
                     )
                     db.commit()
                 except Exception as e:
