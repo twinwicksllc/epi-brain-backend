@@ -1,0 +1,7 @@
+# Trigger Render Redeploy for Voice API
+# This file ensures Render deploys the latest commit with voice API endpoints
+# Latest commit: ae3dccf - Fix voice API - use correct VoiceUsageTracker class and method signatures
+# Voice API endpoints should be available after this deployment:
+# - GET /api/v1/voice/stats
+# - GET /api/v1/voice/available-voices
+# - WebSocket /api/v1/voice/stream
