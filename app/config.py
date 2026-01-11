@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     # Application
     APP_NAME: str = "EPI Brain API"
     APP_VERSION: str = "0.1.0"
-    ENVIRONMENT: str = "development"
+    ENVIRONMENT: str = "development"  # Default, overridden by ENVIRONMENT env var in production
     DEBUG: bool = True
     API_V1_PREFIX: str = "/api/v1"
     

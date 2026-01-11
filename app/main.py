@@ -32,7 +32,14 @@ app = FastAPI(
 )
 
 # Configure CORS based on environment
-if settings.ENVIRONMENT == "production":
+# Check if we're in production (Render environment or explicitly set)
+is_production = (
+    settings.ENVIRONMENT == "production" or 
+    "RENDER" in str(settings.ENVIRONMENT).upper() or
+    "render" in str(settings.DATABASE_URL).lower()
+)
+
+if is_production:
     # Production: Only allow specific frontend domains
     allowed_origins = [
         "https://epibraingenius.com",
@@ -49,9 +56,11 @@ if settings.ENVIRONMENT == "production":
         "Referer",
         "User-Agent",
     ]
+    print(f"🌐 CORS: Production mode detected - allowing origins: {allowed_origins}")
 else:
     # Development: Allow all origins for testing
     allowed_origins = ["*"]
+    print(f"🔧 CORS: Development mode - allowing all origins")
     allowed_headers = ["*"]
 
 app.add_middleware(
