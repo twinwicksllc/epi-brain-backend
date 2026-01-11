@@ -204,20 +204,12 @@ async def voice_stream(
 
 @router.get("/stats")
 async def get_voice_stats(
-    token: str,
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """Get voice usage statistics for current user"""
-    user = get_user_from_token(token, db)
-    
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication token"
-        )
-    
     tracker = VoiceUsageTracker(db)
-    stats = tracker.get_user_stats(str(user.id))
+    stats = tracker.get_user_stats(str(current_user.id))
     
     return {
         "status": "success",
@@ -240,20 +232,12 @@ async def get_available_voices():
 
 @router.get("/can-use-voice")
 async def check_voice_access(
-    token: str,
+    current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
     """Check if user can use voice feature"""
-    user = get_user_from_token(token, db)
-    
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication token"
-        )
-    
     tracker = VoiceUsageTracker(db)
-    can_use, reason = tracker.can_use_voice(str(user.id), user.tier)
+    can_use, reason = tracker.can_use_voice(str(current_user.id), current_user.tier)
     
     return {
         "status": "success",
