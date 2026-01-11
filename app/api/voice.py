@@ -153,6 +153,10 @@ async def voice_stream(
                 
                 # Stream TTS audio
                 try:
+                    print(f"Starting TTS generation for text: {text[:50]}...")
+                    chunk_count = 0
+                    total_bytes = 0
+                    
                     async for audio_chunk in deepgram_tts.stream_tts(
                         text=text,
                         personality=personality,
@@ -160,14 +164,21 @@ async def voice_stream(
                         user_id=str(user.id)
                     ):
                         # Send audio chunk to client
+                        chunk_count += 1
+                        total_bytes += len(audio_chunk)
+                        print(f"Sending audio chunk {chunk_count}, size: {len(audio_chunk)} bytes")
                         await websocket.send_bytes(audio_chunk)
                     
+                    print(f"TTS complete: {chunk_count} chunks, {total_bytes} total bytes")
                     await websocket.send_json({
                         "type": "speak_complete",
                         "message": "Audio generation complete"
                     })
                     
                 except Exception as e:
+                    print(f"TTS error: {str(e)}")
+                    import traceback
+                    traceback.print_exc()
                     await websocket.send_json({
                         "type": "error",
                         "message": f"TTS error: {str(e)}"
