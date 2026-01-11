@@ -72,6 +72,18 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
+# Add debug middleware to check CORS headers
+@app.middleware("http")
+async def debug_cors(request: Request, call_next):
+    response = await call_next(request)
+    
+    # Add debug headers
+    response.headers["X-Debug-CORS-Origin"] = str(request.headers.get("origin"))
+    response.headers["X-Debug-CORS-Method"] = str(request.headers.get("access-control-request-method"))
+    response.headers["X-Debug-Environment"] = str(settings.ENVIRONMENT)
+    
+    return response
+
 
 # Root endpoint
 @app.get("/")
