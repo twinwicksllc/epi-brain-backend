@@ -12,7 +12,7 @@ from app.database import get_db
 from app.services.deepgram_service import deepgram_tts, DeepgramVoiceModel
 from app.services.voice_tracking import VoiceUsageTracker
 from app.models.user import User
-from app.core.security import verify_token
+from app.core.security import get_current_active_user, verify_token
 
 router = APIRouter()
 
