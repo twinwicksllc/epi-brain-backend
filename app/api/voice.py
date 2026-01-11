@@ -17,7 +17,13 @@ from app.config import settings
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/v1/voice", tags=["Voice"])
+router = APIRouter(tags=["Voice"])
+
+# Test endpoint to verify voice API is loaded
+@router.get("/test")
+async def test_voice_api():
+    """Test endpoint to verify voice API is loaded."""
+    return {"status": "Voice API is loaded and working", "version": "1.0.0"}
 voice_tracking = VoiceUsageTracker
 
 # Helper function to get user from token
