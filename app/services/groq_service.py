@@ -158,7 +158,8 @@ RESPONSE STYLE: Be concise and motivating. Keep fitness advice brief, actionable
         message: str,
         mode: str,
         conversation_history: Optional[List[Message]] = None,
-        user_tier: Optional[str] = None
+        user_tier: Optional[str] = None,
+        memory_context: Optional[str] = None
     ) -> Dict:
         """
         Get AI response from Groq
@@ -167,6 +168,8 @@ RESPONSE STYLE: Be concise and motivating. Keep fitness advice brief, actionable
             message: User's message
             mode: Personality mode
             conversation_history: Previous messages in conversation
+            user_tier: User's subscription tier
+            memory_context: User's memory context (injected into system prompt)
             
         Returns:
             Dictionary with response content and metadata
@@ -175,8 +178,19 @@ RESPONSE STYLE: Be concise and motivating. Keep fitness advice brief, actionable
             # Format conversation history
             messages = []
             
-            # Add system prompt as first message
+            # Add system prompt as first message (with memory context if available)
             system_prompt = self._get_system_prompt(mode)
+            
+            # Inject memory context into system prompt
+            if memory_context:
+                system_prompt = f"""{system_prompt}
+
+<user_memory>
+{memory_context}
+</user_memory>
+
+Use the user memory above to personalize your responses. Apply preferences naturally without explicitly mentioning them unless relevant to the conversation."""
+            
             messages.append({
                 "role": "system",
                 "content": system_prompt

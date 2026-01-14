@@ -10,7 +10,7 @@ import logging
 
 from app.config import settings
 from app.database import engine, Base
-from app.api import auth, chat, users, modes, admin, voice
+from app.api import auth, chat, users, modes, admin, voice, memory
 
 # Configure logging
 logging.basicConfig(
@@ -116,6 +116,7 @@ app.include_router(users.router, prefix=f"{settings.API_V1_PREFIX}/users", tags=
 app.include_router(modes.router, prefix=f"{settings.API_V1_PREFIX}/modes", tags=["Modes"])
 app.include_router(admin.router, prefix=f"{settings.API_V1_PREFIX}/admin", tags=["Admin"])
 app.include_router(voice.router, prefix=f"{settings.API_V1_PREFIX}/voice")
+app.include_router(memory.router)
 
 
 # Global exception handler

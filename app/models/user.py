@@ -2,7 +2,7 @@
 User Model
 """
 
-from sqlalchemy import Column, String, DateTime, Enum as SQLEnum
+from sqlalchemy import Column, String, DateTime, Enum as SQLEnum, JSON
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -55,6 +55,9 @@ class User(Base):
     referral_code = Column(String(20), unique=True, nullable=True)
     referred_by = Column(UUID(as_uuid=True), nullable=True)
     referral_credits = Column(String, default="0")
+    
+    # Memory system
+    global_memory = Column(JSON, default={}, nullable=False)  # Persistent cross-session memory
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

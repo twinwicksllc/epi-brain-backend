@@ -2,7 +2,7 @@
 Conversation Model
 """
 
-from sqlalchemy import Column, String, DateTime, ForeignKey, Float, Boolean
+from sqlalchemy import Column, String, DateTime, ForeignKey, Float, Boolean, JSON
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -31,6 +31,9 @@ class Conversation(Base):
     depth = Column(Float, default=0.0, nullable=False)
     last_depth_update = Column(DateTime, default=datetime.utcnow, nullable=False)
     depth_enabled = Column(Boolean, default=True, nullable=False)
+    
+    # Memory system
+    session_memory = Column(JSON, default={}, nullable=False)  # Temporary session memory
     
     # Relationships
     user = relationship("User", back_populates="conversations")

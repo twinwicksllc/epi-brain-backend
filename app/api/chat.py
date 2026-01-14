@@ -20,6 +20,7 @@ from app.core.dependencies import get_current_active_user, check_message_limit
 from app.core.exceptions import ConversationNotFound, UnauthorizedAccess, MessageLimitExceeded
 from app.services.claude import ClaudeService
 from app.services.groq_service import GroqService
+from app.services.memory_service import MemoryService
 from app.services.depth_scorer import DepthScorer
 from app.services.depth_engine import ConversationDepthEngine
 from app.config import settings
@@ -127,6 +128,14 @@ async def send_message(
     start_time = datetime.utcnow()
     
     try:
+        # MEMORY INJECTION: Load and inject user memory into AI context
+        memory_service = MemoryService(db)
+        memory_context = memory_service.render_memory_for_prompt(
+            user_id=str(current_user.id),
+            conversation_id=str(conversation.id),
+            personality=chat_request.mode
+        )
+        
         # Choose AI service based on configuration
         use_groq = getattr(settings, 'USE_GROQ', True)  # Default to Groq if not set
         if use_groq:
@@ -134,14 +143,15 @@ async def send_message(
         else:
             ai_service = ClaudeService()
         
-        # Get AI response
+        # Get AI response with memory context
         # Exclude the last message (current user message) from history to avoid duplicate
         conversation_history = conversation.messages[:-1] if conversation.messages else []
         ai_response = await ai_service.get_response(
             message=chat_request.message,
             mode=chat_request.mode,
             conversation_history=conversation_history,
-            user_tier=current_user.tier.value if hasattr(current_user, "tier") else None
+            user_tier=current_user.tier.value if hasattr(current_user, "tier") else None,
+            memory_context=memory_context  # Pass memory context to AI service
         )
         
         response_time_ms = int((datetime.utcnow() - start_time).total_seconds() * 1000)
