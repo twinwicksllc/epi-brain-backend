@@ -122,7 +122,8 @@ class Settings(BaseSettings):
     # Voice Limits
     FREE_TIER_VOICE_LIMIT: int = 10
     VOICE_FREE_LIMIT: int = 10
-    VOICE_PRO_LIMIT: int = 999999  # Effectively unlimited
+    VOICE_PRO_LIMIT: int = 50  # PRO users get 50 messages per day
+    VOICE_ADMIN_LIMIT: int = 999999  # Admin unlimited access
     VOICE_ALERT_THRESHOLD: float = 0.8  # Alert when 80% of limit reached
     
     # CORS Origins List

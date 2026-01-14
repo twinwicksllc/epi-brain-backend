@@ -62,11 +62,22 @@ class VoiceUsageTracker:
         if user.is_admin and user.is_admin.lower() == "true":
             return True, None
         
-        # PRO and Enterprise tiers have unlimited voice
-        if user_tier in ["pro", "enterprise"]:
+        # PRO tier has daily limit (50/day)
+        if user_tier == "pro":
+            daily_count = self.get_daily_count(user_id)
+            limit = settings.VOICE_PRO_LIMIT
+            
+            if daily_count >= limit:
+                return False, f"Daily voice limit reached ({limit} responses)"
+            
+            remaining = limit - daily_count
+            return True, f"{remaining} voice responses remaining today"
+        
+        # Enterprise tier (if needed in future)
+        if user_tier == "enterprise":
             return True, None
         
-        # FREE tier has daily limit
+        # FREE tier has daily limit (10/day)
         if user_tier == "free":
             daily_count = self.get_daily_count(user_id)
             limit = settings.VOICE_FREE_LIMIT
@@ -85,7 +96,7 @@ class VoiceUsageTracker:
         
         This is the method called by the voice API endpoint.
         """
-        # Get user's tier
+        # Get user's tier and admin status
         user = db.query(User).filter(User.id == user_id).first()
         user_tier = user.tier if user else "free"
         
@@ -99,19 +110,27 @@ class VoiceUsageTracker:
                 detail=error_message or "Voice limit exceeded"
             )
     
-    def get_daily_limit(self, user_tier: str) -> int:
+    def get_daily_limit(self, user_tier: str, is_admin: bool = False) -> Optional[int]:
         """
         Get daily limit for a user tier.
+        
+        Args:
+            user_tier: User's subscription tier (free, pro, enterprise)
+            is_admin: Whether user is an admin
         
         Returns:
             Daily limit (or None for unlimited)
         """
         # Admin users have unlimited
-        if user_tier == "admin":
-            return None
-        # PRO and Enterprise tiers have unlimited
-        if user_tier in ["pro", "enterprise"]:
+        if is_admin:
+            return settings.VOICE_ADMIN_LIMIT
+        # PRO tier has 50/day
+        if user_tier == "pro":
             return settings.VOICE_PRO_LIMIT
+        # Enterprise tier unlimited (if needed in future)
+        if user_tier == "enterprise":
+            return None
+        # FREE tier has 10/day
         else:
             return settings.VOICE_FREE_LIMIT
     
@@ -152,11 +171,14 @@ class VoiceUsageTracker:
         is_admin = (user.is_admin.lower() == "true") if user and user.is_admin else False
         
         # Calculate limit
-        if is_admin or user_tier in ["pro", "enterprise"]:
-            limit = None  # Unlimited
+        if is_admin:
+            limit = settings.VOICE_ADMIN_LIMIT  # Admin unlimited
             remaining = "unlimited"
+        elif user_tier == "pro":
+            limit = settings.VOICE_PRO_LIMIT  # PRO users get 50/day
+            remaining = max(0, limit - daily_count)
         else:
-            limit = settings.VOICE_FREE_LIMIT
+            limit = settings.VOICE_FREE_LIMIT  # FREE users get 10/day
             remaining = max(0, limit - daily_count)
         
         return {
