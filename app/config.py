@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     APP_VERSION: str = "0.1.0"
     
     # Memory System Settings (Phase 2)
-    MEMORY_ENABLED: bool = True
+    MEMORY_ENABLED: bool = False
     MEMORY_AUTO_EXTRACTION_ENABLED: bool = True
     MEMORY_EXTRACTION_INTERVAL: int = 5  # Extract every N messages
     MEMORY_MIN_MESSAGES_FOR_EXTRACTION: int = 3
