@@ -31,6 +31,7 @@ class ConversationResponse(ConversationBase):
     created_at: datetime
     updated_at: datetime
     message_count: int
+    session_memory: dict = {}  # Phase 1: Session memory
     
     class Config:
         from_attributes = True

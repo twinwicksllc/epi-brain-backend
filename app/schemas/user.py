@@ -44,6 +44,8 @@ class UserResponse(UserBase):
     referral_credits: str
     created_at: datetime
     last_login: Optional[datetime]
+    global_memory: dict = {}  # Phase 1: Global memory
+    is_admin: str = "false"  # Admin flag
     
     class Config:
         from_attributes = True
