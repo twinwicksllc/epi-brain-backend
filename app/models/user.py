@@ -49,7 +49,7 @@ class User(Base):
     last_message_reset = Column(DateTime, default=datetime.utcnow)
     
     # Admin flag
-    is_admin = Column(String, default="false", nullable=False)  # Stored as string for SQLite compatibility
+    # is_admin = Column(String, default="false", nullable=False)  # Stored as string for SQLite compatibility - TEMPORARILY DISABLED
     
     # Referral system
     referral_code = Column(String(20), unique=True, nullable=True)
@@ -57,7 +57,7 @@ class User(Base):
     referral_credits = Column(String, default="0")
     
     # Memory system
-    global_memory = Column(JSON, default={}, nullable=False)  # Persistent cross-session memory
+    # global_memory = Column(JSON, default={}, nullable=False)  # Persistent cross-session memory - TEMPORARILY DISABLED
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
