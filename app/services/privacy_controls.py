@@ -4,7 +4,7 @@ Handles privacy-sensitive variables and user consent
 """
 
 from typing import Dict, List, Optional
-from app.config.memory_config import get_privacy_variables, get_variable_config
+from app.memory_config import get_privacy_variables, get_variable_config
 from app.services.memory_service import MemoryService
 import logging
 

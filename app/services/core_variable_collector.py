@@ -4,7 +4,7 @@ Guides AI in collecting core variables from users naturally
 """
 
 from typing import List, Dict, Optional
-from app.config.memory_config import (
+from app.memory_config import (
     get_variable_config,
     get_core_variables,
     get_missing_core_variables,

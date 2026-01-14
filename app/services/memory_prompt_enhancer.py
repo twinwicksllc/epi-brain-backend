@@ -3,7 +3,7 @@ Integrates memory system instructions into AI system prompts
 """
 
 from typing import Dict, Optional
-from app.config.memory_config import (
+from app.memory_config import (
     get_core_variables,
     get_active_variables,
     get_privacy_variables

@@ -7,7 +7,7 @@ from typing import List, Dict, Optional, Any
 import json
 import re
 from datetime import datetime
-from app.config.memory_config import get_active_variables, get_variable_config
+from app.memory_config import get_active_variables, get_variable_config
 from app.services.memory_service import MemoryService
 from app.models.message import Message
 from app.services.groq_service import GroqService
