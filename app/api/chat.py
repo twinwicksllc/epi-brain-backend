@@ -21,21 +21,9 @@ from app.core.exceptions import ConversationNotFound, UnauthorizedAccess, Messag
 from app.services.claude import ClaudeService
 from app.services.groq_service import GroqService
 from app.services.memory_service import MemoryService
-from app.services.core_variable_collector import CoreVariableCollector
-from app.services.active_memory_extractor import ActiveMemoryExtractor
-from app.services.privacy_controls import PrivacyControls
-from app.services.memory_prompt_enhancer import MemoryPromptEnhancer
 from app.services.depth_scorer import DepthScorer
 from app.services.depth_engine import ConversationDepthEngine
 from app.config import settings
-import logging
-
-logger = logging.getLogger(__name__)
-
-router = APIRouter()
-
-# Initialize depth scorer
-depth_scorer = DepthScorer()
 import logging
 
 logger = logging.getLogger(__name__)
@@ -136,40 +124,12 @@ async def send_message(
             logger.error(f"Error scoring depth: {e}", exc_info=True)
             # Don't fail the request if depth scoring fails
     
-    # Initialize Phase 2 memory services
-    memory_service = MemoryService(db)
-    core_collector = CoreVariableCollector(memory_service)
-    active_extractor = ActiveMemoryExtractor(memory_service, GroqService())
-    privacy_controls = PrivacyControls(memory_service)
-    prompt_enhancer = MemoryPromptEnhancer()
-    
-    # Get message count for this conversation
-    message_count = len(conversation.messages)
-    
-    # PHASE 2: Core Variable Collection
-    # Check if we should ask for core variables
-    collection_prompt = None
-    if settings.MEMORY_CORE_COLLECTION_ENABLED:
-        should_collect = await core_collector.should_ask_for_core_variables(
-            user_id=str(current_user.id),
-            message_count=message_count,
-            conversation_depth=new_depth if new_depth else 0.0
-        )
-        
-        if should_collect:
-            collection_prompt = await core_collector.generate_collection_prompt(
-                user_id=str(current_user.id),
-                personality=chat_request.mode,
-                message_count=message_count
-            )
-            if collection_prompt:
-                logger.info(f"Generated core variable collection prompt for user {current_user.id}")
-    
     # Get AI response
     start_time = datetime.utcnow()
     
     try:
         # MEMORY INJECTION: Load and inject user memory into AI context
+        memory_service = MemoryService(db)
         memory_context = memory_service.render_memory_for_prompt(
             user_id=str(current_user.id),
             conversation_id=str(conversation.id),
@@ -209,66 +169,13 @@ async def send_message(
         # Update user message count
         current_user.message_count = str(int(current_user.message_count) + 1)
         
-        # PHASE 2: Active Memory Extraction
-        # Extract relevant information from conversation
-        if settings.MEMORY_AUTO_EXTRACTION_ENABLED:
-            should_extract = await active_extractor.should_extract_from_conversation(
-                user_id=str(current_user.id),
-                message_count=message_count,
-                conversation_depth=new_depth if new_depth else 0.0
-            )
-            
-            if should_extract:
-                try:
-                    # Get recent messages for extraction
-                    recent_messages = conversation.messages[-10:] if len(conversation.messages) >= 10 else conversation.messages
-                    
-                    extraction_result = await active_extractor.extract_from_conversation(
-                        user_id=str(current_user.id),
-                        conversation_id=str(conversation.id),
-                        personality=chat_request.mode,
-                        recent_messages=recent_messages
-                    )
-                    
-                    if extraction_result["success"]:
-                        logger.info(
-                            f"Extracted {len(extraction_result['extracted'])} items "
-                            f"from conversation {conversation.id}"
-                        )
-                except Exception as e:
-                    logger.error(f"Memory extraction failed: {e}", exc_info=True)
-                    # Don't fail the request if extraction fails
-        
-        # PHASE 2: Privacy Detection
-        # Detect privacy-sensitive information in user's message
-        if settings.MEMORY_PRIVACY_CONSENT_ENABLED:
-            detected_privacy = await privacy_controls.detect_privacy_sensitive_content(
-                text=chat_request.message,
-                personality=chat_request.mode
-            )
-            
-            if detected_privacy:
-                logger.info(f"Detected privacy-sensitive content in conversation {conversation.id}")
-                # Privacy prompt would be generated here for frontend to display
-        
         db.commit()
         db.refresh(ai_message)
-        
-        # PHASE 2: Enhance response with core variable collection if needed
-        final_content = ai_message.content
-        if collection_prompt:
-            final_content = prompt_enhancer.enhance_for_core_collection(
-                original_response=ai_message.content,
-                missing_variables=[],  # Already handled by collection_prompt
-                personality=chat_request.mode
-            )
-            if collection_prompt:
-                final_content = f"{ai_message.content}\n\n{collection_prompt}"
         
         return ChatResponse(
             message_id=ai_message.id,
             conversation_id=conversation.id,
-            content=final_content,
+            content=ai_message.content,
             mode=conversation.mode,
             created_at=ai_message.created_at,
             tokens_used=int(ai_message.tokens_used) if ai_message.tokens_used else None,
@@ -690,150 +597,3 @@ async def enable_depth_tracking(
         "message": "Depth tracking enabled",
         "conversation_id": str(conversation_id)
     }
-
-
-# ============================================
-# PHASE 2: Memory Management Endpoints
-# ============================================
-
-@router.get("/memory/completion-status")
-async def get_memory_completion_status(
-    current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Get completion status of core memory variables
-    """
-    memory_service = MemoryService(db)
-    core_collector = CoreVariableCollector(memory_service)
-    
-    status = await core_collector.assess_completion_status(user_id=str(current_user.id))
-    
-    return {
-        "user_id": str(current_user.id),
-        "completion_percentage": status["completion_percentage"],
-        "completed_variables": status["completed_variables"],
-        "total_required_variables": status["total_required_variables"],
-        "missing_variables": status["missing_variables"],
-        "is_complete": status["is_complete"]
-    }
-
-
-@router.get("/memory/next-priority-variable")
-async def get_next_priority_variable(
-    current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Get the next highest-priority core variable to collect
-    """
-    memory_service = MemoryService(db)
-    core_collector = CoreVariableCollector(memory_service)
-    
-    next_var = await core_collector.get_next_priority_variable(user_id=str(current_user.id))
-    
-    return {
-        "next_variable": next_var,
-        "prompt": next_var if next_var else None
-    }
-
-
-@router.post("/memory/extract")
-async def trigger_memory_extraction(
-    conversation_id: UUID,
-    current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Manually trigger memory extraction from a conversation
-    """
-    conversation = db.query(Conversation).filter(
-        Conversation.id == conversation_id,
-        Conversation.user_id == current_user.id
-    ).first()
-    
-    if not conversation:
-        raise ConversationNotFound()
-    
-    memory_service = MemoryService(db)
-    active_extractor = ActiveMemoryExtractor(memory_service, GroqService())
-    
-    # Get recent messages
-    recent_messages = conversation.messages[-10:] if len(conversation.messages) >= 10 else conversation.messages
-    
-    extraction_result = await active_extractor.extract_from_conversation(
-        user_id=str(current_user.id),
-        conversation_id=str(conversation.id),
-        personality=conversation.mode,
-        recent_messages=recent_messages
-    )
-    
-    return {
-        "success": extraction_result["success"],
-        "extracted_count": len(extraction_result["extracted"]),
-        "extracted_data": extraction_result["extracted"],
-        "errors": extraction_result["errors"]
-    }
-
-
-@router.post("/memory/privacy-consent")
-async def handle_privacy_consent(
-    variable_path: str,
-    value: str,
-    consent: bool,
-    current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Handle user consent for storing privacy-sensitive information
-    """
-    memory_service = MemoryService(db)
-    privacy_controls = PrivacyControls(memory_service)
-    
-    result = await privacy_controls.store_with_permission(
-        user_id=str(current_user.id),
-        variable_path=variable_path,
-        value=value,
-        user_consent=consent
-    )
-    
-    return result
-
-
-@router.get("/memory/privacy-settings")
-async def get_privacy_settings(
-    current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Get user's privacy settings
-    """
-    memory_service = MemoryService(db)
-    privacy_controls = PrivacyControls(memory_service)
-    
-    settings = await privacy_controls.get_user_privacy_settings(user_id=str(current_user.id))
-    
-    return {
-        "user_id": str(current_user.id),
-        "privacy_settings": settings
-    }
-
-
-@router.put("/memory/privacy-settings")
-async def update_privacy_settings(
-    settings_update: dict,
-    current_user: User = Depends(get_current_active_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Update user's privacy settings
-    """
-    memory_service = MemoryService(db)
-    privacy_controls = PrivacyControls(memory_service)
-    
-    result = await privacy_controls.update_privacy_settings(
-        user_id=str(current_user.id),
-        settings=settings_update
-    )
-    
-    return result
