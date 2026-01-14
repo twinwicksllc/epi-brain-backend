@@ -26,6 +26,17 @@ from app.services.depth_engine import ConversationDepthEngine
 from app.config import settings
 import logging
 
+# Phase 2 imports - wrapped in try/except for safety
+try:
+    from app.services.core_variable_collector import CoreVariableCollector
+    from app.services.active_memory_extractor import ActiveMemoryExtractor
+    from app.services.privacy_controls import PrivacyControls
+    from app.services.memory_prompt_enhancer import MemoryPromptEnhancer
+    PHASE_2_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Phase 2 memory services not available: {e}")
+    PHASE_2_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
@@ -136,6 +147,31 @@ async def send_message(
             personality=chat_request.mode
         )
         
+        # PHASE 2: Core Variable Collection (if enabled)
+        collection_prompt = None
+        if PHASE_2_AVAILABLE and settings.MEMORY_ENABLED and settings.MEMORY_CORE_COLLECTION_ENABLED:
+            try:
+                core_collector = CoreVariableCollector(memory_service)
+                message_count = len(conversation.messages)
+                
+                should_collect = await core_collector.should_ask_for_core_variables(
+                    user_id=str(current_user.id),
+                    message_count=message_count,
+                    conversation_depth=new_depth if new_depth else 0.0
+                )
+                
+                if should_collect:
+                    collection_prompt = await core_collector.generate_collection_prompt(
+                        user_id=str(current_user.id),
+                        personality=chat_request.mode,
+                        message_count=message_count
+                    )
+                    if collection_prompt:
+                        logger.info(f"Generated core variable collection prompt for user {current_user.id}")
+            except Exception as e:
+                logger.error(f"Phase 2 core collection error: {e}", exc_info=True)
+                # Don't fail the request if Phase 2 has issues
+        
         # Choose AI service based on configuration
         use_groq = getattr(settings, 'USE_GROQ', True)  # Default to Groq if not set
         if use_groq:
@@ -169,13 +205,52 @@ async def send_message(
         # Update user message count
         current_user.message_count = str(int(current_user.message_count) + 1)
         
+        # PHASE 2: Active Memory Extraction (if enabled)
+        if PHASE_2_AVAILABLE and settings.MEMORY_ENABLED and settings.MEMORY_AUTO_EXTRACTION_ENABLED:
+            try:
+                active_extractor = ActiveMemoryExtractor(memory_service, GroqService())
+                message_count = len(conversation.messages)
+                
+                should_extract = await active_extractor.should_extract_from_conversation(
+                    user_id=str(current_user.id),
+                    message_count=message_count,
+                    conversation_depth=new_depth if new_depth else 0.0
+                )
+                
+                if should_extract:
+                    recent_messages = conversation.messages[-10:] if len(conversation.messages) >= 10 else conversation.messages
+                    
+                    extraction_result = await active_extractor.extract_from_conversation(
+                        user_id=str(current_user.id),
+                        conversation_id=str(conversation.id),
+                        personality=chat_request.mode,
+                        recent_messages=recent_messages
+                    )
+                    
+                    if extraction_result["success"]:
+                        logger.info(
+                            f"Extracted {len(extraction_result['extracted'])} items "
+                            f"from conversation {conversation.id}"
+                        )
+            except Exception as e:
+                logger.error(f"Phase 2 active extraction error: {e}", exc_info=True)
+                # Don't fail the request if Phase 2 has issues
+        
         db.commit()
         db.refresh(ai_message)
+        
+        # PHASE 2: Enhance response with collection prompt if needed
+        final_content = ai_message.content
+        if collection_prompt and PHASE_2_AVAILABLE:
+            try:
+                final_content = f"{ai_message.content}\n\n{collection_prompt}"
+            except Exception as e:
+                logger.error(f"Phase 2 prompt enhancement error: {e}", exc_info=True)
         
         return ChatResponse(
             message_id=ai_message.id,
             conversation_id=conversation.id,
-            content=ai_message.content,
+            content=final_content,
             mode=conversation.mode,
             created_at=ai_message.created_at,
             tokens_used=int(ai_message.tokens_used) if ai_message.tokens_used else None,
