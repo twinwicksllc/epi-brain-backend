@@ -33,7 +33,7 @@ class Conversation(Base):
     depth_enabled = Column(Boolean, default=True, nullable=False)
     
     # Memory system
-    # session_memory = Column(JSON, default={}, nullable=False)  # Temporary session memory - TEMPORARILY DISABLED
+    session_memory = Column(JSON, default={}, nullable=False)  # Temporary session memory
     
     # Relationships
     user = relationship("User", back_populates="conversations")
