@@ -43,8 +43,8 @@ class VoiceStatsResponse(BaseModel):
     user_id: str
     tier: str
     daily_usage: int
-    daily_limit: int
-    remaining: int
+    daily_limit: Optional[int]  # None for unlimited
+    remaining: Optional[Union[int, str]]  # None or "unlimited" for unlimited
     total_usage: int
     voice_model: str
 
@@ -64,15 +64,25 @@ async def get_voice_stats(
         tracker = VoiceUsageTracker(db)
         stats = tracker.get_user_stats(current_user.id)
         
-        # Get daily limit based on tier
-        daily_limit = tracker.get_daily_limit(current_user.tier)
+        # Check if user is admin
+        is_admin = (current_user.is_admin.lower() == "true") if current_user.is_admin else False
+        
+        # Get daily limit based on tier and admin status
+        daily_limit = tracker.get_daily_limit(current_user.tier, is_admin)
+        
+        # Calculate remaining
+        daily_usage = stats.get("daily_usage", 0)
+        if daily_limit is None or is_admin:
+            remaining = "unlimited"
+        else:
+            remaining = max(0, daily_limit - daily_usage)
         
         return VoiceStatsResponse(
             user_id=str(current_user.id),
             tier=current_user.tier,
-            daily_usage=stats.get("daily_usage", 0),
+            daily_usage=daily_usage,
             daily_limit=daily_limit,
-            remaining=max(0, daily_limit - stats.get("daily_usage", 0)),
+            remaining=remaining,
             total_usage=stats.get("total_usage", 0),
             voice_model=settings.VOICE_TTS_MODEL,
         )
