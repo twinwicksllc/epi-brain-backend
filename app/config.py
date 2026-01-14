@@ -18,6 +18,14 @@ class Settings(BaseSettings):
     APP_NAME: str = "EPI Brain"
     APP_VERSION: str = "0.1.0"
     
+    # Memory System Settings (Phase 2)
+    MEMORY_ENABLED: bool = True
+    MEMORY_AUTO_EXTRACTION_ENABLED: bool = True
+    MEMORY_EXTRACTION_INTERVAL: int = 5  # Extract every N messages
+    MEMORY_MIN_MESSAGES_FOR_EXTRACTION: int = 3
+    MEMORY_CORE_COLLECTION_ENABLED: bool = True
+    MEMORY_PRIVACY_CONSENT_ENABLED: bool = True
+    
     # Environment
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
     DEBUG: bool = os.getenv("DEBUG", "True").lower() == "true"
