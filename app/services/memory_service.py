@@ -61,7 +61,7 @@ class MemoryService:
             raise ValueError(f"User {user_id} not found")
         
         # Initialize memory if empty
-        memory = self.get_global_memory(user_id)
+        memory = await self.get_global_memory(user_id)
         if not memory:
             memory = self._get_default_global_memory()
         
@@ -106,7 +106,7 @@ class MemoryService:
         if not user:
             raise ValueError(f"User {user_id} not found")
         
-        memory = self.get_global_memory(user_id)
+        memory = await self.get_global_memory(user_id)
         if not memory:
             memory = self._get_default_global_memory()
         
@@ -137,7 +137,7 @@ class MemoryService:
         personality: str
     ) -> Dict[str, Any]:
         """Get context for a specific personality"""
-        memory = self.get_global_memory(user_id)
+        memory = await self.get_global_memory(user_id)
         return memory.get("personality_contexts", {}).get(personality, {})
     
     # ==================== SESSION MEMORY ====================
@@ -168,7 +168,7 @@ class MemoryService:
         if not conv:
             raise ValueError(f"Conversation {conversation_id} not found")
         
-        memory = self.get_session_memory(conversation_id)
+        memory = await self.get_session_memory(conversation_id)
         if not memory:
             memory = self._get_default_session_memory()
         
@@ -204,8 +204,8 @@ class MemoryService:
         2. Durable patterns are promoted to global
         3. Session facts are cleared
         """
-        session_mem = self.get_session_memory(conversation_id)
-        global_mem = self.get_global_memory(user_id)
+        session_mem = await self.get_session_memory(conversation_id)
+        global_mem = await self.get_global_memory(user_id)
         
         # Extract durable information from session
         current_context = session_mem.get("current_context", {})
@@ -216,7 +216,7 @@ class MemoryService:
             pass
         
         # Mark session as consolidated
-        self.update_session_memory(
+        await self.update_session_memory(
             conversation_id,
             "metadata",
             "consolidation_pending",
@@ -254,8 +254,8 @@ class MemoryService:
         - Topic: Job interview preparation
         - Mood: Nervous
         """
-        global_mem = self.get_global_memory(user_id)
-        session_mem = self.get_session_memory(conversation_id)
+        global_mem = await self.get_global_memory(user_id)
+        session_mem = await self.get_session_memory(conversation_id)
         
         sections = []
         
