@@ -14,6 +14,9 @@ from app.models.user import User
 from app.models.conversation import Conversation
 from datetime import datetime
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class MemoryService:
