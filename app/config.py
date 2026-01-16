@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     # Memory System Settings (Phase 2)
     MEMORY_ENABLED: bool = True
     MEMORY_AUTO_EXTRACTION_ENABLED: bool = True
-    MEMORY_EXTRACTION_INTERVAL: int = 5  # Extract every N messages
-    MEMORY_MIN_MESSAGES_FOR_EXTRACTION: int = 3
+    MEMORY_EXTRACTION_INTERVAL: int = 2  # Extract every N messages (reduced from 5)
+    MEMORY_MIN_MESSAGES_FOR_EXTRACTION: int = 1  # Reduced from 3
     MEMORY_CORE_COLLECTION_ENABLED: bool = True
     MEMORY_PRIVACY_CONSENT_ENABLED: bool = True
     

@@ -32,6 +32,7 @@ try:
     from app.services.active_memory_extractor import ActiveMemoryExtractor
     from app.services.privacy_controls import PrivacyControls
     from app.services.memory_prompt_enhancer import MemoryPromptEnhancer
+    from app.services.response_parser import ResponseParser
     PHASE_2_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"Phase 2 memory services not available: {e}")
@@ -146,6 +147,20 @@ async def send_message(
             conversation_id=str(conversation.id),
             personality=chat_request.mode
         )
+        
+        # PHASE 2: Parse user message for core variable information
+        if PHASE_2_AVAILABLE and settings.MEMORY_ENABLED:
+            try:
+                response_parser = ResponseParser(memory_service)
+                extracted = await response_parser.parse_and_extract(
+                    user_id=str(current_user.id),
+                    user_message=chat_request.message,
+                    conversation_id=str(conversation.id)
+                )
+                if extracted:
+                    logger.info(f"Extracted core variables from user message: {extracted}")
+            except Exception as e:
+                logger.error(f"Error parsing user response: {e}", exc_info=True)
         
         # PHASE 2: Core Variable Collection (if enabled)
         collection_prompt = None

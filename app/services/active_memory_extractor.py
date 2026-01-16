@@ -291,19 +291,19 @@ Extract the relevant information from the conversation above and return it as a 
         """
         Determine if we should extract memory from this conversation
         Rules:
-        - Extract after every 5 messages (not too frequent)
+        - Extract after every 2 messages (more frequent for better memory)
         - Extract if conversation depth > 0.3 (meaningful conversation)
-        - Don't extract in very short conversations (< 3 messages)
+        - Always extract in early conversations to catch important info
         """
-        if message_count < 3:
+        if message_count < 1:
             return False
         
-        # Extract every 5 messages
-        if message_count % 5 == 0:
+        # Extract every 2 messages (changed from 5 for better memory capture)
+        if message_count % 2 == 0:
             return True
         
         # Extract if conversation becomes deep
-        if conversation_depth > 0.5 and message_count >= 5:
+        if conversation_depth > 0.5 and message_count >= 2:
             return True
         
         return False
