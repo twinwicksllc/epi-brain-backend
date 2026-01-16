@@ -152,7 +152,10 @@ async def send_message(
         if PHASE_2_AVAILABLE and settings.MEMORY_ENABLED and settings.MEMORY_CORE_COLLECTION_ENABLED:
             try:
                 core_collector = CoreVariableCollector(memory_service)
-                message_count = len(conversation.messages)
+                # Count messages BEFORE flush to avoid issues
+                message_count = db.query(Message).filter(
+                    Message.conversation_id == conversation.id
+                ).count()
                 
                 should_collect = await core_collector.should_ask_for_core_variables(
                     user_id=str(current_user.id),
@@ -209,7 +212,10 @@ async def send_message(
         if PHASE_2_AVAILABLE and settings.MEMORY_ENABLED and settings.MEMORY_AUTO_EXTRACTION_ENABLED:
             try:
                 active_extractor = ActiveMemoryExtractor(memory_service, GroqService())
-                message_count = len(conversation.messages)
+                # Count messages BEFORE flush to avoid issues
+                message_count = db.query(Message).filter(
+                    Message.conversation_id == conversation.id
+                ).count()
                 
                 should_extract = await active_extractor.should_extract_from_conversation(
                     user_id=str(current_user.id),
