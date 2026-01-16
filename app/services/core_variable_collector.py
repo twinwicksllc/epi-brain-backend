@@ -50,28 +50,27 @@ class CoreVariableCollector:
         """
         Determine if we should ask for core variables
         Rules:
-        - Always ask within first 5 messages if missing required variables
+        - Only ask on message 2 or 3 if missing critical variables (name)
         - Don't ask if conversation is deep (user is engaged in serious topic)
-        - Don't ask if we've asked in last 3 messages
-        - Don't ask if completion > 80%
+        - Don't ask if completion > 50% (we have the basics)
+        - Be very conservative to avoid feeling transactional
         """
         status = await self.assess_completion_status(user_id)
         
-        # If already mostly complete, don't ask
-        if status["completion_percentage"] >= 80:
+        # If we have at least 50% of info, don't ask
+        if status["completion_percentage"] >= 50:
             return False
         
         # Don't interrupt deep conversations
-        if conversation_depth > 0.6:
+        if conversation_depth > 0.5:
             return False
         
-        # Ask in early conversations if missing required variables
-        if message_count <= 5 and status["missing_variables"]:
-            return True
-        
-        # If very incomplete (< 30%), ask within first 10 messages
-        if status["completion_percentage"] < 30 and message_count <= 10:
-            return True
+        # Only ask on message 2 or 3, and only if we're missing name
+        if message_count in [2, 3]:
+            # Check if name is missing
+            missing_name = "user_profile.name" in status["missing_variables"]
+            if missing_name:
+                return True
         
         return False
     
@@ -113,68 +112,44 @@ class CoreVariableCollector:
     ) -> str:
         """
         Generate a personality-appropriate prompt for collecting variables
+        Keep it natural and conversational, not like a form
         """
         personality_prompts = {
             "personal_friend": {
-                "greeting": "Hey! 👋 I'd love to get to know you better so I can be more helpful.",
-                "closing": "Feel free to answer whatever you're comfortable with!"
+                "casual": "By the way, what should I call you?"
             },
             "sales_agent": {
-                "greeting": "To ensure I provide the best service for you, I'd like to understand a bit more about your needs.",
-                "closing": "These details will help me tailor my approach for you."
+                "casual": "Quick question - what name should I use for you?"
             },
             "student_tutor": {
-                "greeting": "To make our learning sessions as effective as possible, I'd like to understand your preferences.",
-                "closing": "This will help me create a personalized learning experience for you!"
+                "casual": "Before we continue, what should I call you?"
             },
             "kids_learning": {
-                "greeting": "Hi there! Let's make this super fun! Can you tell me a few things so I can help you better?",
-                "closing": "You're doing great! 💪"
+                "casual": "Hey, what's your name?"
             },
             "christian_companion": {
-                "greeting": "I'm blessed to have this conversation with you. To better support you in your faith journey, I'd love to know a bit more about you.",
-                "closing": "Thank you for sharing with me."
+                "casual": "I'd love to know your name so I can address you properly."
             },
             "customer_service": {
-                "greeting": "To provide you with the best possible assistance, I'd like to understand your preferences.",
-                "closing": "This will help me serve you better."
+                "casual": "May I have your name for our conversation?"
             },
             "psychology_expert": {
-                "greeting": "Creating a comfortable and effective therapeutic experience starts with understanding your preferences.",
-                "closing": "This information will help me tailor our sessions to your needs."
+                "casual": "What would you like me to call you?"
             },
             "business_mentor": {
-                "greeting": "To provide the most relevant and strategic guidance for your business, I'd like to understand your situation better.",
-                "closing": "This context will help me give you more targeted advice."
+                "casual": "What should I call you?"
             },
             "weight_loss_coach": {
-                "greeting": "To create the most effective personalized fitness plan for you, I'd love to learn a bit more about you.",
-                "closing": "This information will help me design the perfect program for you!"
+                "casual": "What's your name?"
             }
         }
         
-        # Get personality-specific prompts
+        # Get personality-specific prompt
         persona = personality_prompts.get(personality, personality_prompts["personal_friend"])
         
-        # Select 2-3 most important questions (don't overwhelm)
-        num_questions = min(len(questions), 3)
-        selected_questions = questions[:num_questions]
-        
-        # Build the prompt
-        if message_count == 0:
-            # First message - more comprehensive
-            prompt = f"{persona['greeting']}\n\n"
-            for question in selected_questions:
-                prompt += f"• {question}\n"
-            prompt += f"\n{persona['closing']}"
-        else:
-            # Subsequent messages - more conversational
-            prompt = f"{persona['greeting']}\n\n"
-            for i, question in enumerate(selected_questions, 1):
-                prompt += f"{i}. {question}\n"
-            prompt += f"\n{persona['closing']}"
-        
-        return prompt
+        # Just ask for name in a natural way
+        # Don't ask multiple questions at once - it's overwhelming
+        return persona["casual"]
     
     async def mark_as_collected(self, user_id: str, variable_path: str, value: any):
         """
