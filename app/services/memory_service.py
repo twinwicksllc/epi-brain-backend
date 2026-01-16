@@ -24,7 +24,7 @@ class MemoryService:
     
     # ==================== GLOBAL MEMORY ====================
     
-    def get_global_memory(self, user_id: str) -> Dict[str, Any]:
+    async def get_global_memory(self, user_id: str) -> Dict[str, Any]:
         """Get user's global memory"""
         user = self.db.query(User).filter(User.id == user_id).first()
         if not user:
@@ -38,7 +38,7 @@ class MemoryService:
                 return {}
         return user.global_memory if user.global_memory else {}
     
-    def update_global_memory(
+    async def update_global_memory(
         self, 
         user_id: str, 
         category: str, 
@@ -86,7 +86,7 @@ class MemoryService:
         self.db.commit()
         return memory
     
-    def update_personality_context(
+    async def update_personality_context(
         self,
         user_id: str,
         personality: str,
@@ -131,7 +131,7 @@ class MemoryService:
         self.db.commit()
         return memory
     
-    def get_personality_context(
+    async def get_personality_context(
         self,
         user_id: str,
         personality: str
@@ -142,7 +142,7 @@ class MemoryService:
     
     # ==================== SESSION MEMORY ====================
     
-    def get_session_memory(self, conversation_id: str) -> Dict[str, Any]:
+    async def get_session_memory(self, conversation_id: str) -> Dict[str, Any]:
         """Get conversation's session memory"""
         conv = self.db.query(Conversation).filter(Conversation.id == conversation_id).first()
         if not conv:
@@ -156,7 +156,7 @@ class MemoryService:
                 return {}
         return conv.session_memory if conv.session_memory else {}
     
-    def update_session_memory(
+    async def update_session_memory(
         self,
         conversation_id: str,
         category: str,
@@ -191,7 +191,7 @@ class MemoryService:
     
     # ==================== MEMORY CONSOLIDATION ====================
     
-    def consolidate_session_to_global(
+    async def consolidate_session_to_global(
         self,
         user_id: str,
         conversation_id: str
@@ -227,7 +227,7 @@ class MemoryService:
     
     # ==================== MEMORY INJECTION ====================
     
-    def render_memory_for_prompt(
+    async def render_memory_for_prompt(
         self,
         user_id: str,
         conversation_id: str,

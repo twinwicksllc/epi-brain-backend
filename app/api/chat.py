@@ -141,7 +141,7 @@ async def send_message(
     try:
         # MEMORY INJECTION: Load and inject user memory into AI context
         memory_service = MemoryService(db)
-        memory_context = memory_service.render_memory_for_prompt(
+        memory_context = await memory_service.render_memory_for_prompt(
             user_id=str(current_user.id),
             conversation_id=str(conversation.id),
             personality=chat_request.mode
