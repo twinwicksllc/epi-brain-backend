@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime
 from uuid import UUID
+from app.schemas.message import MessageResponse
 
 
 class ConversationBase(BaseModel):
@@ -39,7 +40,7 @@ class ConversationResponse(ConversationBase):
 
 class ConversationWithMessages(ConversationResponse):
     """Schema for conversation with messages"""
-    messages: List = []
+    messages: List[MessageResponse] = []
     
     class Config:
         from_attributes = True
