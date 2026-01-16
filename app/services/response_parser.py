@@ -35,6 +35,8 @@ class ResponseParser:
         """
         extracted = {}
         
+        logger.debug(f"Parsing message for user {user_id}: {user_message[:100]}...")
+        
         # Extract name
         name = self._extract_name(user_message)
         if name:
@@ -83,22 +85,38 @@ class ResponseParser:
             extracted["preferred_tone"] = tone
             logger.info(f"Extracted tone preference: {tone} for user {user_id}")
         
+        if extracted:
+            logger.info(f"Total extracted for user {user_id}: {extracted}")
+        else:
+            logger.debug(f"No information extracted from message for user {user_id}")
+        
         return extracted
     
     def _extract_name(self, text: str) -> Optional[str]:
         """Extract name from user message"""
-        # Patterns for name extraction
+        # Patterns for name extraction (more specific to avoid false positives)
         patterns = [
-            r"(?:my name is|i'm|i am|call me)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)",
-            r"(?:I'm|i am)\s+([A-Z][a-z]+)",
-            r"call me\s+([A-Z][a-z]+)",
+            r"my name is\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)",
+            r"call me\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)",
         ]
+        
+        # Words that should never be extracted as names
+        invalid_names = {
+            "test", "testing", "hello", "hi", "hey", "in", "at", "on", "by",
+            "from", "to", "with", "for", "and", "or", "but", "the", "a", "an",
+            "cst", "est", "pst", "mst", "gmt", "utc", "yes", "no", "ok", "okay"
+        }
         
         for pattern in patterns:
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
                 name = match.group(1).strip()
-                if name and len(name) > 1 and not name.lower() in ["test", "testing", "hello", "hi"]:
+                # Validate the extracted name
+                if (name and 
+                    len(name) > 1 and 
+                    len(name) < 50 and  # Reasonable name length
+                    name.lower() not in invalid_names and
+                    not any(char.isdigit() for char in name)):  # No numbers
                     return name.title()
         
         return None

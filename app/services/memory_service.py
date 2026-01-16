@@ -28,14 +28,20 @@ class MemoryService:
         """Get user's global memory"""
         user = self.db.query(User).filter(User.id == user_id).first()
         if not user:
+            logger.warning(f"User {user_id} not found when getting global memory")
             return {}
         
         # Handle both dict and string (JSON) formats
         if isinstance(user.global_memory, str):
             try:
-                return json.loads(user.global_memory) if user.global_memory else {}
-            except:
+                memory = json.loads(user.global_memory) if user.global_memory else {}
+                logger.debug(f"Retrieved global memory for user {user_id}: {memory}")
+                return memory
+            except Exception as e:
+                logger.error(f"Error parsing global memory for user {user_id}: {e}")
                 return {}
+        
+        logger.debug(f"Retrieved global memory for user {user_id}: {user.global_memory}")
         return user.global_memory if user.global_memory else {}
     
     async def update_global_memory(
@@ -84,6 +90,7 @@ class MemoryService:
         flag_modified(user, "global_memory")
         
         self.db.commit()
+        logger.info(f"Updated global memory for user {user_id}: {memory}")
         return memory
     
     async def update_personality_context(

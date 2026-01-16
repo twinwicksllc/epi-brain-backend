@@ -147,6 +147,10 @@ async def send_message(
             conversation_id=str(conversation.id),
             personality=chat_request.mode
         )
+        if memory_context:
+            logger.info(f"Injecting memory context for user {current_user.id}:\n{memory_context}")
+        else:
+            logger.debug(f"No memory context available for user {current_user.id}")
         
         # PHASE 2: Parse user message for core variable information
         if PHASE_2_AVAILABLE and settings.MEMORY_ENABLED:
