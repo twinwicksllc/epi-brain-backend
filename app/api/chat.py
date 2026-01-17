@@ -47,6 +47,16 @@ except ImportError as e:
     logger.warning(f"Phase 2A semantic memory service not available: {e}")
     PHASE_2A_AVAILABLE = False
 
+# Phase 2B imports - goal management (wrapped in try/except for safety)
+try:
+    from app.services.goal_service import GoalService
+    from app.services.habit_service import HabitService
+    from app.services.check_in_service import CheckInService
+    PHASE_2B_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Phase 2B goal management services not available: {e}")
+    PHASE_2B_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
@@ -201,6 +211,61 @@ async def send_message(
             else:
                 combined_memory_context = semantic_memory_context
         
+        # PHASE 2B: GOAL CONTEXT RETRIEVAL
+        goal_context = ""
+        if PHASE_2B_AVAILABLE and settings.MEMORY_ENABLED:
+            try:
+                goal_service = GoalService(db)
+                habit_service = HabitService(db)
+                
+                # Retrieve active goals
+                active_goals = goal_service.get_user_goals(
+                    user_id=str(current_user.id),
+                    status="in_progress"
+                )
+                
+                # Retrieve due habits
+                due_habits = habit_service.get_due_habits(
+                    user_id=str(current_user.id)
+                )
+                
+                # Format goal context for AI
+                if active_goals or due_habits:
+                    goal_context_parts = []
+                    
+                    if active_goals:
+                        goal_context_parts.append("Active Goals:")
+                        for goal in active_goals:
+                            goal_info = f"- {goal.title}"
+                            if goal.specific_description:
+                                goal_info += f": {goal.specific_description}"
+                            if goal.current_streak_days > 0:
+                                goal_info += f" (Streak: {goal.current_streak_days} days)"
+                            goal_context_parts.append(goal_info)
+                    
+                    if due_habits:
+                        goal_context_parts.append("\nHabits Due Today:")
+                        for habit in due_habits:
+                            habit_info = f"- {habit.name}"
+                            if habit.current_streak > 0:
+                                habit_info += f" (Streak: {habit.current_streak} days)"
+                            goal_context_parts.append(habit_info)
+                    
+                    goal_context = "\n".join(goal_context_parts)
+                    logger.info(f"Retrieved {len(active_goals)} active goals and {len(due_habits)} due habits for user {current_user.id}")
+                else:
+                    logger.debug(f"No active goals or due habits for user {current_user.id}")
+            except Exception as e:
+                logger.error(f"Error retrieving goal context: {e}", exc_info=True)
+                # Don't fail the request if goal retrieval fails
+        
+        # Combine all contexts (memory + semantic + goals)
+        if goal_context:
+            if combined_memory_context:
+                combined_memory_context = f"{combined_memory_context}\n\n{goal_context}"
+            else:
+                combined_memory_context = goal_context
+        
         # PHASE 2: Parse user message for core variable information
         if PHASE_2_AVAILABLE and settings.MEMORY_ENABLED:
             try:
@@ -242,6 +307,64 @@ async def send_message(
             except Exception as e:
                 logger.error(f"Phase 2 core collection error: {e}", exc_info=True)
                 # Don't fail the request if Phase 2 has issues
+        
+        # PHASE 2B: ACCOUNTABILITY PROMPTS
+        accountability_prompt = None
+        if PHASE_2B_AVAILABLE and settings.MEMORY_ENABLED:
+            try:
+                goal_service = GoalService(db)
+                check_in_service = CheckInService(db)
+                
+                # Check if user has overdue check-ins
+                overdue_items = check_in_service.get_overdue_items(
+                    user_id=str(current_user.id)
+                )
+                
+                if overdue_items:
+                    # Generate accountability prompt for overdue items
+                    overdue_goals = [item for item in overdue_items if item['type'] == 'goal']
+                    
+                    if overdue_goals:
+                        # Get user's accountability style (default to 'grace' if not set)
+                        accountability_style = getattr(current_user, 'accountability_style', 'grace')
+                        
+                        # Generate prompt based on accountability style
+                        if accountability_style == 'tactical':
+                            accountability_prompt = (
+                                f"\n\n[Accountability Check] You have {len(overdue_goals)} goal(s) that need attention. "
+                                "Let's get back on track. What's holding you back?"
+                            )
+                        elif accountability_style == 'grace':
+                            accountability_prompt = (
+                                f"\n\n[Gentle Reminder] I noticed you have {len(overdue_goals)} goal(s) that could use some attention. "
+                                "No pressure - want to talk about how things are going?"
+                            )
+                        elif accountability_style == 'analyst':
+                            accountability_prompt = (
+                                f"\n\n[Progress Analysis] Data shows {len(overdue_goals)} goal(s) are behind schedule. "
+                                "Let's analyze what's working and what needs adjustment."
+                            )
+                        else:  # adaptive
+                            # Use conversation depth to determine tone
+                            if new_depth and new_depth > 0.5:
+                                # High depth - use grace approach
+                                accountability_prompt = (
+                                    f"\n\n[Check-in] I see you have {len(overdue_goals)} goal(s) that might need attention. "
+                                    "How are you feeling about your progress?"
+                                )
+                            else:
+                                # Low depth - use tactical approach
+                                accountability_prompt = (
+                                    f"\n\n[Quick Check] {len(overdue_goals)} goal(s) need updates. "
+                                    "Ready to share your progress?"
+                                )
+                        
+                        if accountability_prompt:
+                            logger.info(f"Generated accountability prompt for user {current_user.id} ({accountability_style} style)")
+                
+            except Exception as e:
+                logger.error(f"Phase 2B accountability prompt error: {e}", exc_info=True)
+                # Don't fail the request if accountability prompt generation fails
         
         # Choose AI service based on configuration
         use_groq = getattr(settings, 'USE_GROQ', True)  # Default to Groq if not set
@@ -349,16 +472,77 @@ async def send_message(
                 logger.error(f"Phase 2A semantic memory extraction error: {e}", exc_info=True)
                 # Don't fail the request if semantic memory extraction fails
         
+        # PHASE 2B: GOAL EXTRACTION AND UPDATES
+        if PHASE_2B_AVAILABLE and settings.MEMORY_ENABLED:
+            try:
+                goal_service = GoalService(db)
+                habit_service = HabitService(db)
+                
+                # Check if user message mentions goals or progress
+                user_message_lower = chat_request.message.lower()
+                
+                # Keywords that indicate goal-related content
+                goal_keywords = ['goal', 'progress', 'achieved', 'completed', 'milestone', 'target']
+                habit_keywords = ['habit', 'routine', 'daily', 'completed', 'did', 'finished']
+                
+                # Check for goal mentions
+                if any(keyword in user_message_lower for keyword in goal_keywords):
+                    # Get user's active goals
+                    active_goals = goal_service.get_user_goals(
+                        user_id=str(current_user.id),
+                        status="in_progress"
+                    )
+                    
+                    # Simple extraction: look for progress indicators
+                    if active_goals and ('progress' in user_message_lower or 'update' in user_message_lower):
+                        # For now, log that we detected a potential goal update
+                        # In future, use AI to extract specific progress details
+                        logger.info(
+                            f"Detected potential goal update in conversation {conversation.id}. "
+                            f"User has {len(active_goals)} active goals."
+                        )
+                
+                # Check for habit completion mentions
+                if any(keyword in user_message_lower for keyword in habit_keywords):
+                    # Get user's active habits
+                    active_habits = habit_service.get_user_habits(
+                        user_id=str(current_user.id),
+                        status="active"
+                    )
+                    
+                    # Simple extraction: look for completion indicators
+                    if active_habits and ('completed' in user_message_lower or 'did' in user_message_lower or 'finished' in user_message_lower):
+                        # For now, log that we detected a potential habit completion
+                        # In future, use AI to extract specific habit completions
+                        logger.info(
+                            f"Detected potential habit completion in conversation {conversation.id}. "
+                            f"User has {len(active_habits)} active habits."
+                        )
+                
+            except Exception as e:
+                logger.error(f"Phase 2B goal extraction error: {e}", exc_info=True)
+                # Don't fail the request if goal extraction fails
+        
         db.commit()
         db.refresh(ai_message)
         
         # PHASE 2: Enhance response with collection prompt if needed
+        # PHASE 2B: Add accountability prompt if needed
         final_content = ai_message.content
+        
+        # Add collection prompt (Phase 2)
         if collection_prompt and PHASE_2_AVAILABLE:
             try:
-                final_content = f"{ai_message.content}\n\n{collection_prompt}"
+                final_content = f"{final_content}\n\n{collection_prompt}"
             except Exception as e:
                 logger.error(f"Phase 2 prompt enhancement error: {e}", exc_info=True)
+        
+        # Add accountability prompt (Phase 2B)
+        if accountability_prompt and PHASE_2B_AVAILABLE:
+            try:
+                final_content = f"{final_content}\n\n{accountability_prompt}"
+            except Exception as e:
+                logger.error(f"Phase 2B accountability prompt enhancement error: {e}", exc_info=True)
         
         return ChatResponse(
             message_id=ai_message.id,
