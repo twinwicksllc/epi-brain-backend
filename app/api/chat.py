@@ -38,6 +38,15 @@ except ImportError as e:
     logger.warning(f"Phase 2 memory services not available: {e}")
     PHASE_2_AVAILABLE = False
 
+# Phase 2A imports - semantic memory (wrapped in try/except for safety)
+try:
+    from app.services.semantic_memory_service import SemanticMemoryService
+    import openai
+    PHASE_2A_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Phase 2A semantic memory service not available: {e}")
+    PHASE_2A_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
@@ -152,6 +161,46 @@ async def send_message(
         else:
             logger.debug(f"No memory context available for user {current_user.id}")
         
+        # PHASE 2A: SEMANTIC MEMORY RETRIEVAL
+        semantic_memory_context = ""
+        if PHASE_2A_AVAILABLE and settings.SEMANTIC_MEMORY_ENABLED:
+            try:
+                # Initialize OpenAI client for embeddings
+                openai_client = None
+                if settings.OPENAI_API_KEY:
+                    openai_client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+                else:
+                    logger.warning("OPENAI_API_KEY not set, semantic memory retrieval disabled")
+                
+                if openai_client:
+                    semantic_memory_service = SemanticMemoryService(db, openai_client)
+                    
+                    # Retrieve relevant semantic memories
+                    relevant_memories = await semantic_memory_service.retrieve_relevant_memories(
+                        user_id=str(current_user.id),
+                        mode=chat_request.mode,
+                        current_input=chat_request.message,
+                        max_memories=settings.SEMANTIC_MEMORY_MAX_MEMORIES,
+                        min_importance=settings.SEMANTIC_MEMORY_MIN_IMPORTANCE / 10.0
+                    )
+                    
+                    if relevant_memories:
+                        semantic_memory_context = semantic_memory_service.format_memories_for_prompt(relevant_memories)
+                        logger.info(f"Retrieved {len(relevant_memories)} semantic memories for user {current_user.id}, mode {chat_request.mode}")
+                    else:
+                        logger.debug(f"No semantic memories found for user {current_user.id}, mode {chat_request.mode}")
+            except Exception as e:
+                logger.error(f"Error retrieving semantic memories: {e}", exc_info=True)
+                # Don't fail the request if semantic memory retrieval fails
+        
+        # Combine memory contexts (existing + semantic)
+        combined_memory_context = memory_context
+        if semantic_memory_context:
+            if combined_memory_context:
+                combined_memory_context = f"{combined_memory_context}\n\n{semantic_memory_context}"
+            else:
+                combined_memory_context = semantic_memory_context
+        
         # PHASE 2: Parse user message for core variable information
         if PHASE_2_AVAILABLE and settings.MEMORY_ENABLED:
             try:
@@ -201,7 +250,7 @@ async def send_message(
         else:
             ai_service = ClaudeService()
         
-        # Get AI response with memory context
+        # Get AI response with combined memory context (existing + semantic)
         # Exclude the last message (current user message) from history to avoid duplicate
         conversation_history = conversation.messages[:-1] if conversation.messages else []
         ai_response = await ai_service.get_response(
@@ -209,7 +258,7 @@ async def send_message(
             mode=chat_request.mode,
             conversation_history=conversation_history,
             user_tier=current_user.tier.value if hasattr(current_user, "tier") else None,
-            memory_context=memory_context  # Pass memory context to AI service
+            memory_context=combined_memory_context  # Pass combined memory context to AI service
         )
         
         response_time_ms = int((datetime.utcnow() - start_time).total_seconds() * 1000)
@@ -260,6 +309,45 @@ async def send_message(
             except Exception as e:
                 logger.error(f"Phase 2 active extraction error: {e}", exc_info=True)
                 # Don't fail the request if Phase 2 has issues
+        
+        # PHASE 2A: SEMANTIC MEMORY EXTRACTION
+        if PHASE_2A_AVAILABLE and settings.SEMANTIC_MEMORY_ENABLED:
+            try:
+                # Initialize OpenAI client for embeddings
+                openai_client = None
+                if settings.OPENAI_API_KEY:
+                    openai_client = openai.AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+                
+                if openai_client:
+                    semantic_memory_service = SemanticMemoryService(db, openai_client)
+                    
+                    # Extract semantic memories from conversation
+                    # Only extract if we have enough messages (minimum threshold)
+                    message_count = db.query(Message).filter(
+                        Message.conversation_id == conversation.id
+                    ).count()
+                    
+                    # Extract every N messages (configurable)
+                    extraction_interval = settings.MEMORY_EXTRACTION_INTERVAL
+                    if message_count >= settings.MEMORY_MIN_MESSAGES_FOR_EXTRACTION and message_count % extraction_interval == 0:
+                        extracted_memories = await semantic_memory_service.extract_memories_from_conversation(
+                            conversation=conversation,
+                            max_memories=5
+                        )
+                        
+                        if extracted_memories:
+                            logger.info(
+                                f"Extracted {len(extracted_memories)} semantic memories "
+                                f"from conversation {conversation.id} (mode: {chat_request.mode})"
+                            )
+                        else:
+                            logger.debug(
+                                f"No semantic memories extracted from conversation {conversation.id} "
+                                f"(mode: {chat_request.mode})"
+                            )
+            except Exception as e:
+                logger.error(f"Phase 2A semantic memory extraction error: {e}", exc_info=True)
+                # Don't fail the request if semantic memory extraction fails
         
         db.commit()
         db.refresh(ai_message)

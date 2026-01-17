@@ -26,6 +26,16 @@ class Settings(BaseSettings):
     MEMORY_CORE_COLLECTION_ENABLED: bool = True
     MEMORY_PRIVACY_CONSENT_ENABLED: bool = True
     
+    # Semantic Memory Settings (Phase 2A)
+    SEMANTIC_MEMORY_ENABLED: bool = True
+    SEMANTIC_MEMORY_MODEL: str = "text-embedding-3-small"  # OpenAI embedding model
+    SEMANTIC_MEMORY_DIMENSION: int = 1536  # Dimension for text-embedding-3-small
+    SEMANTIC_MEMORY_SIMILARITY_THRESHOLD: float = 0.75  # Minimum similarity score
+    SEMANTIC_MEMORY_MAX_MEMORIES: int = 10  # Max memories to retrieve per query
+    SEMANTIC_MEMORY_MIN_IMPORTANCE: int = 3  # Minimum importance score (1-10)
+    SEMANTIC_MEMORY_AUTO_EXPIRE_DAYS: int = 90  # Default expiration in days
+    SEMANTIC_MEMORY_CONSOLIDATE_THRESHOLD: int = 5  # Consolidate similar memories
+    
     # Environment
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
     DEBUG: bool = os.getenv("DEBUG", "True").lower() == "true"
