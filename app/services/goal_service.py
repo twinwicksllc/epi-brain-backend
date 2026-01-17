@@ -339,7 +339,8 @@ class GoalService:
         # Calculate completion rate (check-ins due vs completed)
         if goal.created_at:
             days_active = (datetime.utcnow() - goal.created_at).days
-            expected_check_ins = max(1, days_active // CHECK_IN_INTERVALS.get(goal.check_in_frequency, 7))
+            # Default to weekly check-ins (7 days) since check_in_frequency doesn't exist in model
+            expected_check_ins = max(1, days_active // 7)
             completion_rate = (total_check_ins / expected_check_ins) * 100 if expected_check_ins > 0 else 0
         else:
             completion_rate = 0.0
@@ -358,13 +359,13 @@ class GoalService:
             'goal_id': goal_id,
             'status': goal.status,
             'progress_percentage': goal.progress_percentage,
-            'streak_days': goal.streak_days,
+            'streak_days': goal.current_streak_days,
             'completion_rate': round(completion_rate, 1),
             'total_check_ins': total_check_ins,
             'average_energy': avg_energy,
             'mood_distribution': mood_counts,
-            'target_date': goal.target_date.isoformat() if goal.target_date else None,
-            'days_until_target': (goal.target_date - date.today()).days if goal.target_date else None
+            'time_bound_deadline': goal.time_bound_deadline.isoformat() if goal.time_bound_deadline else None,
+            'days_until_target': (goal.time_bound_deadline.date() - date.today()).days if goal.time_bound_deadline else None
         }
     
     # Milestone Management
@@ -502,11 +503,11 @@ class GoalService:
         ).order_by(desc(CheckIn.created_at)).limit(30).all()
         
         if not recent_check_ins:
-            goal.streak_days = 0
+            goal.current_streak_days = 0
             return
         
-        # Calculate streak based on check-in frequency
-        interval_days = CHECK_IN_INTERVALS.get(goal.check_in_frequency, 7)
+        # Calculate streak based on default weekly interval (7 days)
+        interval_days = 7
         
         current_date = datetime.utcnow()
         streak = 0
@@ -520,7 +521,7 @@ class GoalService:
             else:
                 break
         
-        goal.streak_days = streak
+        goal.current_streak_days = streak
         goal.completion_rate = self._calculate_completion_rate(goal)
     
     def _calculate_completion_rate(self, goal: Goal) -> float:
@@ -533,6 +534,6 @@ class GoalService:
         ).count()
         
         days_active = (datetime.utcnow() - goal.created_at).days
-        expected_check_ins = max(1, days_active // CHECK_IN_INTERVALS.get(goal.check_in_frequency, 7))
+        expected_check_ins = max(1, days_active // 7)  # Default to weekly interval
         
         return (total_check_ins / expected_check_ins) * 100 if expected_check_ins > 0 else 0.0

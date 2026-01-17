@@ -25,14 +25,12 @@ class GoalCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
     description: str = Field(..., min_length=1)
     category: str = Field(..., min_length=1)
-    target_date: Optional[date] = None
+    time_bound_deadline: Optional[datetime] = None
     accountability_style: str = Field(default="adaptive")
-    check_in_frequency: str = Field(default="weekly")
-    specific: Optional[str] = None
-    measurable: Optional[str] = None
-    achievable: Optional[str] = None
-    relevant: Optional[str] = None
-    time_bound: Optional[str] = None
+    specific_description: Optional[str] = None
+    measurable_criteria: Optional[str] = None
+    achievable_proof: Optional[str] = None
+    relevance_reasoning: Optional[str] = None
 
 
 class GoalUpdate(BaseModel):
@@ -40,11 +38,14 @@ class GoalUpdate(BaseModel):
     title: Optional[str] = Field(None, min_length=1, max_length=200)
     description: Optional[str] = Field(None, min_length=1)
     category: Optional[str] = None
-    target_date: Optional[date] = None
+    time_bound_deadline: Optional[datetime] = None
     accountability_style: Optional[str] = None
-    check_in_frequency: Optional[str] = None
     status: Optional[str] = None
     progress_percentage: Optional[float] = Field(None, ge=0, le=100)
+    specific_description: Optional[str] = None
+    measurable_criteria: Optional[str] = None
+    achievable_proof: Optional[str] = None
+    relevance_reasoning: Optional[str] = None
 
 
 class GoalResponse(BaseModel):
@@ -56,13 +57,21 @@ class GoalResponse(BaseModel):
     category: str
     status: str
     progress_percentage: float
-    streak_days: int
+    current_streak_days: int
+    longest_streak_days: int
+    total_check_ins: int
+    successful_check_ins: int
     completion_rate: float
     accountability_style: str
-    check_in_frequency: str
-    target_date: Optional[date]
+    specific_description: Optional[str]
+    measurable_criteria: Optional[str]
+    achievable_proof: Optional[str]
+    relevance_reasoning: Optional[str]
+    time_bound_deadline: Optional[datetime]
+    created_by_mode: str
     created_at: datetime
     updated_at: datetime
+    started_at: Optional[datetime]
     completed_at: Optional[datetime]
 
     class Config:
@@ -71,7 +80,7 @@ class GoalResponse(BaseModel):
 
 class CheckInCreate(BaseModel):
     """Schema for creating a check-in"""
-    progress_notes: str = Field(..., min_length=1)
+    notes: str = Field(..., min_length=1)
     mood: Optional[str] = None
     energy_level: Optional[int] = Field(None, ge=1, le=10)
     progress_percentage: Optional[float] = Field(None, ge=0, le=100)
@@ -140,14 +149,12 @@ async def create_goal(
         title=goal_data.title,
         description=goal_data.description,
         category=goal_data.category,
-        target_date=goal_data.target_date,
+        time_bound_deadline=goal_data.time_bound_deadline,
         accountability_style=goal_data.accountability_style,
-        check_in_frequency=goal_data.check_in_frequency,
-        specific=goal_data.specific,
-        measurable=goal_data.measurable,
-        achievable=goal_data.achievable,
-        relevant=goal_data.relevant,
-        time_bound=goal_data.time_bound
+        specific_description=goal_data.specific_description,
+        measurable_criteria=goal_data.measurable_criteria,
+        achievable_proof=goal_data.achievable_proof,
+        relevance_reasoning=goal_data.relevance_reasoning
     )
     
     return goal
@@ -330,7 +337,7 @@ async def create_check_in(
         check_in = service.create_check_in(
             goal_id=goal_id,
             user_id=str(current_user.id),
-            progress_notes=check_in_data.progress_notes,
+            notes=check_in_data.notes,
             mood=check_in_data.mood,
             energy_level=check_in_data.energy_level,
             progress_percentage=check_in_data.progress_percentage
