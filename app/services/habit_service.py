@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, date
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, desc, func
 
-from app.models.habit import Habit, HabitCompletion
+from app.models.habit import Habit, HabitCompletion, HabitStatus
 
 logger = logging.getLogger(__name__)
 
@@ -85,14 +85,12 @@ class HabitService:
             name=name,
             description=description,
             frequency=frequency,
-            category=category,
             trigger=trigger,
             routine=routine,
             reward=reward,
-            target_days=target_days,
-            is_active=True,
-            streak_days=0,
-            completion_rate=0.0,
+            custom_days=target_days,
+            status=HabitStatus.ACTIVE,
+            created_by_mode="personal_friend",  # Default mode
             **kwargs
         )
         
@@ -137,8 +135,8 @@ class HabitService:
         
         Args:
             user_id: The user's ID
-            is_active: Optional active status filter
-            category: Optional category filter
+            is_active: Optional active status filter (mapped to status)
+            category: Optional category filter (not used in current model)
             limit: Maximum number of habits to return
             
         Returns:
@@ -147,10 +145,10 @@ class HabitService:
         query = self.db.query(Habit).filter(Habit.user_id == user_id)
         
         if is_active is not None:
-            query = query.filter(Habit.is_active == is_active)
-        
-        if category:
-            query = query.filter(Habit.category == category)
+            if is_active:
+                query = query.filter(Habit.status == HabitStatus.ACTIVE)
+            else:
+                query = query.filter(Habit.status != HabitStatus.ACTIVE)
         
         return query.order_by(desc(Habit.created_at)).limit(limit).all()
     
@@ -245,22 +243,34 @@ class HabitService:
         if not habit:
             raise ValueError("Habit not found")
         
+        # Use the model's built-in record_completion method
         if completed_at is None:
-            completed_at = datetime.utcnow()
-        
-        # Create completion record
-        completion = HabitCompletion(
-            habit_id=habit_id,
-            user_id=user_id,
-            completed_at=completed_at,
-            notes=notes
-        )
-        
-        try:
+            completion = habit.record_completion()
+        else:
+            # For custom completed_at, create directly
+            completion = HabitCompletion(
+                habit_id=habit_id,
+                user_id=user_id,
+                completed_at=completed_at,
+                notes=notes
+            )
             self.db.add(completion)
             
-            # Update habit statistics
-            self._update_habit_stats(habit)
+            # Update stats manually for custom completion
+            habit.total_completions += 1
+            habit.current_streak_days += 1
+            if habit.current_streak_days > habit.longest_streak_days:
+                habit.longest_streak_days = habit.current_streak_days
+        
+        if completion is None:
+            raise ValueError("Habit already completed today")
+        
+        if notes:
+            completion.notes = notes
+        
+        try:
+            if completed_at is None:
+                self.db.add(completion)
             
             self.db.commit()
             self.db.refresh(completion)
@@ -307,14 +317,19 @@ class HabitService:
         Returns:
             List of Habit objects that are due today
         """
-        today = date.today()
-        current_weekday = today.weekday()
+        # Get active habits
+        habits = self.db.query(Habit).filter(
+            and_(
+                Habit.user_id == user_id,
+                Habit.status == HabitStatus.ACTIVE
+            )
+        ).all()
         
-        habits = self.get_user_habits(user_id, is_active=True)
         due_habits = []
+        today = date.today()
         
         for habit in habits:
-            if self._is_habit_due_today(habit, today, current_weekday):
+            if habit.is_due_today:
                 due_habits.append(habit)
         
         return due_habits
@@ -341,15 +356,16 @@ class HabitService:
         total_completions = len(completions)
         
         # Calculate completion rate
-        if habit.created_at:
-            days_active = (datetime.utcnow() - habit.created_at).days
+        if habit.started_at:
+            days_active = (datetime.utcnow() - habit.started_at).days
             expected_completions = self._calculate_expected_completions(habit, days_active)
             completion_rate = (total_completions / expected_completions) * 100 if expected_completions > 0 else 0
         else:
             completion_rate = 0.0
         
-        # Calculate best streak
-        best_streak = self._calculate_best_streak(completions, habit.frequency)
+        # Use model's streak values
+        current_streak = habit.current_streak_days
+        best_streak = habit.longest_streak_days
         
         # Calculate completions in last 30 days
         thirty_days_ago = datetime.utcnow() - timedelta(days=30)
@@ -359,9 +375,9 @@ class HabitService:
             'habit_id': habit_id,
             'name': habit.name,
             'description': habit.description,
-            'frequency': habit.frequency,
-            'is_active': habit.is_active,
-            'streak_days': habit.streak_days,
+            'frequency': str(habit.frequency),
+            'status': str(habit.status),
+            'streak_days': current_streak,
             'best_streak': best_streak,
             'completion_rate': round(completion_rate, 1),
             'total_completions': total_completions,
@@ -373,39 +389,6 @@ class HabitService:
     
     # Helper methods
     
-    def _is_habit_due_today(
-        self,
-        habit: Habit,
-        today: date,
-        current_weekday: int
-    ) -> bool:
-        """Check if a habit is due today"""
-        frequency = habit.frequency
-        
-        if frequency == 'daily':
-            return True
-        elif frequency == 'weekdays':
-            return current_weekday < 5  # Monday-Friday
-        elif frequency == 'weekends':
-            return current_weekday >= 5  # Saturday-Sunday
-        elif frequency == 'weekly':
-            # Check if last completion was at least 7 days ago
-            last_completion = self.db.query(HabitCompletion).filter(
-                HabitCompletion.habit_id == habit.id
-            ).order_by(desc(HabitCompletion.completed_at)).first()
-            
-            if not last_completion:
-                return True
-            
-            days_since_last = (today - last_completion.completed_at.date()).days
-            return days_since_last >= 7
-        elif frequency == 'custom' and habit.target_days:
-            # Check if today is in target days
-            target_days = [int(d.strip()) for d in habit.target_days.split(',')]
-            return current_weekday in target_days
-        
-        return False
-    
     def _calculate_expected_completions(
         self,
         habit: Habit,
@@ -415,96 +398,31 @@ class HabitService:
         if days_active <= 0:
             return 0
         
-        frequency = habit.frequency
+        frequency_str = str(habit.frequency).lower()
         
-        if frequency == 'daily':
+        if frequency_str == 'daily':
             return days_active
-        elif frequency == 'weekdays':
+        elif frequency_str == 'weekdays':
             # Approximate 5/7 of days are weekdays
             return int(days_active * 5 / 7)
-        elif frequency == 'weekends':
+        elif frequency_str == 'weekends':
             # Approximate 2/7 of days are weekends
             return int(days_active * 2 / 7)
-        elif frequency == 'weekly':
+        elif frequency_str == 'weekly':
             return max(1, days_active // 7)
-        elif frequency == 'custom' and habit.target_days:
+        elif frequency_str == 'custom' and habit.custom_days:
             # Count how many target days in the period
-            target_days = [int(d.strip()) for d in habit.target_days.split(',')]
-            return int(days_active * len(target_days) / 7)
+            import json
+            try:
+                target_days = json.loads(habit.custom_days)
+                return int(days_active * len(target_days) / 7)
+            except:
+                return days_active
         
         return days_active
     
     def _update_habit_stats(self, habit: Habit):
-        """Update habit statistics (streak, completion rate)"""
-        completions = self.get_habit_completions(str(habit.id), str(habit.user_id))
-        
-        # Update current streak
-        habit.streak_days = self._calculate_current_streak(completions, habit.frequency)
-        
-        # Update completion rate
-        if habit.created_at:
-            days_active = (datetime.utcnow() - habit.created_at).days
-            expected = self._calculate_expected_completions(habit, days_active)
-            habit.completion_rate = (len(completions) / expected) * 100 if expected > 0 else 0.0
-        else:
-            habit.completion_rate = 0.0
-    
-    def _calculate_current_streak(
-        self,
-        completions: List[HabitCompletion],
-        frequency: str
-    ) -> int:
-        """Calculate current streak based on frequency"""
-        if not completions:
-            return 0
-        
-        interval_days = HABIT_FREQUENCIES.get(frequency, {}).get('interval_days', 1)
-        
-        current_date = datetime.utcnow()
-        streak = 0
-        
-        for completion in completions:
-            days_diff = (current_date - completion.completed_at).days
-            
-            if days_diff <= interval_days:
-                streak += 1
-                current_date = completion.completed_at
-            else:
-                break
-        
-        return streak
-    
-    def _calculate_best_streak(
-        self,
-        completions: List[HabitCompletion],
-        frequency: str
-    ) -> int:
-        """Calculate the best streak ever achieved"""
-        if not completions:
-            return 0
-        
-        # Sort by date ascending
-        sorted_completions = sorted(completions, key=lambda c: c.completed_at)
-        
-        interval_days = HABIT_FREQUENCIES.get(frequency, {}).get('interval_days', 1)
-        
-        best_streak = 0
-        current_streak = 0
-        last_date = None
-        
-        for completion in sorted_completions:
-            if last_date is None:
-                current_streak = 1
-            else:
-                days_diff = (completion.completed_at - last_date).days
-                if days_diff <= interval_days:
-                    current_streak += 1
-                else:
-                    current_streak = 1
-            
-            if current_streak > best_streak:
-                best_streak = current_streak
-            
-            last_date = completion.completed_at
-        
-        return best_streak
+        """Update habit statistics - the model handles streak calculation automatically"""
+        # The Habit model handles streak calculation in its record_completion method
+        # We just need to ensure the model is updated
+        pass

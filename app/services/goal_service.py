@@ -10,10 +10,18 @@ from datetime import datetime, timedelta, date
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, desc, func
 
-from app.models.goal import Goal, CheckIn, Milestone
+from app.models.goal import Goal, CheckIn, Milestone, GoalStatus, GoalCategory
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
+
+# Default check-in intervals (in days) - for calculating due check-ins
+CHECK_IN_INTERVALS = {
+    'daily': 1,
+    'weekly': 7,
+    'biweekly': 14,
+    'monthly': 30,
+}
 
 # Goal status transitions
 GOAL_STATUS_TRANSITIONS = {
@@ -54,9 +62,9 @@ class GoalService:
         title: str,
         description: str,
         category: str,
-        target_date: Optional[date] = None,
+        time_bound_deadline: Optional[datetime] = None,
         accountability_style: str = "adaptive",
-        check_in_frequency: str = "weekly",
+        created_by_mode: str = "personal_friend",
         **kwargs
     ) -> Goal:
         """
@@ -67,9 +75,9 @@ class GoalService:
             title: Goal title
             description: Detailed description of the goal
             category: Goal category (e.g., 'health', 'career', 'personal')
-            target_date: Optional target completion date
+            time_bound_deadline: Optional target completion datetime
             accountability_style: How to hold user accountable (tactical, grace, analyst, adaptive)
-            check_in_frequency: How often to check in (daily, weekly, biweekly, monthly)
+            created_by_mode: Which mode created this goal
             **kwargs: Additional goal attributes
             
         Returns:
@@ -79,14 +87,12 @@ class GoalService:
             user_id=user_id,
             title=title,
             description=description,
-            category=category,
-            target_date=target_date,
+            category=GoalCategory(category.upper()) if isinstance(category, str) else category,
+            time_bound_deadline=time_bound_deadline,
             accountability_style=accountability_style,
-            check_in_frequency=check_in_frequency,
-            status='not_started',
+            created_by_mode=created_by_mode,
+            status=GoalStatus.NOT_STARTED,
             progress_percentage=0.0,
-            streak_days=0,
-            completion_rate=0.0,
             **kwargs
         )
         

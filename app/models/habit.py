@@ -160,5 +160,8 @@ class HabitCompletion(Base):
     mood = Column(String(20), nullable=True)
     difficulty = Column(Integer, nullable=True)  # 1-10
     
+    # Relationships
+    habit = relationship("Habit", back_populates="completions")
+    
     def __repr__(self):
         return f"<HabitCompletion {self.id} - {self.completed_at}>"
