@@ -118,11 +118,12 @@ app.include_router(admin.router, prefix=f"{settings.API_V1_PREFIX}/admin", tags=
 app.include_router(voice.router, prefix=f"{settings.API_V1_PREFIX}/voice")
 app.include_router(memory.router)
 
-# Accountability Layer routers
-from app.api import goals, habits, check_ins
-app.include_router(goals.router, prefix=f"{settings.API_V1_PREFIX}/goals", tags=["Goals"])
-app.include_router(habits.router, prefix=f"{settings.API_V1_PREFIX}/habits", tags=["Habits"])
-app.include_router(check_ins.router, prefix=f"{settings.API_V1_PREFIX}/check-ins", tags=["Check-ins"])
+# Accountability Layer routers - DISABLED until services are fixed
+# TODO: Re-enable after fixing service layer to match database models
+# from app.api import goals, habits, check_ins
+# app.include_router(goals.router, prefix=f"{settings.API_V1_PREFIX}/goals", tags=["Goals"])
+# app.include_router(habits.router, prefix=f"{settings.API_V1_PREFIX}/habits", tags=["Habits"])
+# app.include_router(check_ins.router, prefix=f"{settings.API_V1_PREFIX}/check-ins", tags=["Check-ins"])
 
 
 # Global exception handler
