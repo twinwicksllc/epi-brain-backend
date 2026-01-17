@@ -22,10 +22,10 @@
 - [x] Test suite for database models (passing)
 
 **What Needs Fixing**:
-- [ ] GoalService field names (target_date → time_bound_deadline, etc.)
-- [ ] HabitService field names (is_active → status, target_days → custom_days)
-- [ ] CheckInService field names (progress_notes → notes)
-- [ ] API endpoint schemas to match model fields
+- [x] GoalService field names (target_date → time_bound_deadline, etc.)
+- [x] HabitService field names (is_active → status, target_days → custom_days)
+- [x] CheckInService field names (progress_notes → notes)
+- [x] API endpoint schemas to match model fields
 - [ ] Service layer tests
 
 **Safety Measures**:
