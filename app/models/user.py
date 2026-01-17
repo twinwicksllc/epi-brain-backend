@@ -2,7 +2,7 @@
 User Model
 """
 
-from sqlalchemy import Column, String, DateTime, Enum as SQLEnum, JSON
+from sqlalchemy import Column, String, DateTime, Enum as SQLEnum, JSON, Boolean, Integer
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -58,6 +58,11 @@ class User(Base):
     
     # Memory system
     global_memory = Column(JSON, default={}, nullable=False)  # Persistent cross-session memory
+    
+    # Accountability preferences
+    accountability_style = Column(String(50), default="adaptive", nullable=False)  # tactical, grace, analyst, adaptive
+    sentiment_override_enabled = Column(Boolean, default=True, nullable=False)  # Allow AI to adjust based on mood
+    depth_sensitivity_enabled = Column(Boolean, default=True, nullable=False)  # Allow tone adjustment based on depth
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
