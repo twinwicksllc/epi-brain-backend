@@ -5,6 +5,7 @@ Admin API Endpoints
 from fastapi import APIRouter, Depends, HTTPException, Security
 from sqlalchemy.orm import Session
 from typing import List
+from pydantic import BaseModel, Field
 
 from app.database import get_db
 from app.models.user import User, UserTier
@@ -13,6 +14,25 @@ from app.core.dependencies import get_current_active_user
 from app.core.security import verify_admin_key
 
 router = APIRouter()
+
+
+# Pydantic schemas for cleanup requests
+class CleanupRequest(BaseModel):
+    """Request model for conversation cleanup"""
+    days_threshold: int = Field(default=30, ge=1, le=365, description="Days threshold for old conversations")
+    dry_run: bool = Field(default=False, description="If true, only show what would be deleted")
+    batch_size: int = Field(default=100, ge=1, le=1000, description="Batch size for deletion")
+
+
+class CleanupResponse(BaseModel):
+    """Response model for conversation cleanup"""
+    success: bool
+    total_deleted: int
+    total_messages_deleted: int
+    batches_processed: int
+    cutoff_date: str
+    dry_run: bool
+    message: str
 
 
 @router.post("/users/{user_id}/upgrade-tier", response_model=UserResponse)
@@ -247,3 +267,145 @@ async def get_voice_cost_projection(
         "status": "success",
         "data": projection
     }
+
+
+# Conversation Cleanup Endpoints
+
+@router.post("/conversations/cleanup", response_model=CleanupResponse)
+async def cleanup_old_conversations(
+    request: CleanupRequest,
+    admin_key: str = Security(verify_admin_key),
+    db: Session = Depends(get_db)
+):
+    """
+    Clean up conversations older than specified days (Admin only)
+    
+    Args:
+        request: Cleanup request with days_threshold, dry_run, and batch_size
+        admin_key: Admin API key for authentication
+        db: Database session
+    
+    Returns:
+        Cleanup statistics
+    """
+    from app.services.conversation_cleanup import ConversationCleanupService
+    
+    try:
+        cleanup_service = ConversationCleanupService(days_threshold=request.days_threshold)
+        
+        # First, count what we have
+        count = cleanup_service.count_old_conversations(db)
+        
+        if count == 0:
+            return CleanupResponse(
+                success=True,
+                total_deleted=0,
+                total_messages_deleted=0,
+                batches_processed=0,
+                cutoff_date=cleanup_service.get_cutoff_date().isoformat(),
+                dry_run=request.dry_run,
+                message="No old conversations found"
+            )
+        
+        # Perform cleanup
+        stats = cleanup_service.cleanup_old_conversations(
+            db,
+            batch_size=request.batch_size,
+            dry_run=request.dry_run
+        )
+        
+        message = f"{'Would delete' if request.dry_run else 'Deleted'} {stats['total_deleted']} conversations and {stats['total_messages_deleted']} messages"
+        
+        return CleanupResponse(
+            success=True,
+            total_deleted=stats['total_deleted'],
+            total_messages_deleted=stats['total_messages_deleted'],
+            batches_processed=stats['batches_processed'],
+            cutoff_date=stats['cutoff_date'],
+            dry_run=request.dry_run,
+            message=message
+        )
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Cleanup failed: {str(e)}")
+
+
+@router.get("/conversations/count-old")
+async def count_old_conversations(
+    days: int = 30,
+    admin_key: str = Security(verify_admin_key),
+    db: Session = Depends(get_db)
+):
+    """
+    Count conversations older than specified days (Admin only)
+    
+    Args:
+        days: Number of days threshold (default: 30)
+        admin_key: Admin API key for authentication
+        db: Database session
+    
+    Returns:
+        Count of old conversations
+    """
+    from app.services.conversation_cleanup import ConversationCleanupService
+    
+    try:
+        cleanup_service = ConversationCleanupService(days_threshold=days)
+        count = cleanup_service.count_old_conversations(db)
+        cutoff_date = cleanup_service.get_cutoff_date()
+        
+        return {
+            "count": count,
+            "cutoff_date": cutoff_date.isoformat(),
+            "days_threshold": days
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Count failed: {str(e)}")
+
+
+@router.post("/conversations/cleanup-user/{user_id}", response_model=CleanupResponse)
+async def cleanup_user_conversations(
+    user_id: str,
+    days: int = 30,
+    dry_run: bool = False,
+    admin_key: str = Security(verify_admin_key),
+    db: Session = Depends(get_db)
+):
+    """
+    Clean up old conversations for a specific user (Admin only)
+    
+    Args:
+        user_id: User ID to clean up conversations for
+        days: Number of days threshold (default: 30)
+        dry_run: If true, only show what would be deleted
+        admin_key: Admin API key for authentication
+        db: Database session
+    
+    Returns:
+        Cleanup statistics
+    """
+    from app.services.conversation_cleanup import ConversationCleanupService
+    
+    try:
+        cleanup_service = ConversationCleanupService(days_threshold=days)
+        stats = cleanup_service.cleanup_conversations_for_user(
+            db,
+            user_id=user_id,
+            dry_run=dry_run
+        )
+        
+        message = f"{'Would delete' if dry_run else 'Deleted'} {stats['total_deleted']} conversations and {stats['total_messages_deleted']} messages for user {user_id}"
+        
+        return CleanupResponse(
+            success=True,
+            total_deleted=stats['total_deleted'],
+            total_messages_deleted=stats['total_messages_deleted'],
+            batches_processed=1,
+            cutoff_date=stats['cutoff_date'],
+            dry_run=dry_run,
+            message=message
+        )
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"User cleanup failed: {str(e)}")
