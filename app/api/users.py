@@ -54,6 +54,19 @@ async def update_user_profile(
     if user_update.primary_mode is not None:
         current_user.primary_mode = user_update.primary_mode
     
+    # Phase 3: Update accountability style
+    if user_update.accountability_style is not None:
+        # Validate accountability style
+        valid_styles = ['tactical', 'grace', 'analyst', 'adaptive']
+        if user_update.accountability_style in valid_styles:
+            current_user.accountability_style = user_update.accountability_style
+        else:
+            from fastapi import HTTPException
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid accountability style. Must be one of: {', '.join(valid_styles)}"
+            )
+    
     db.commit()
     db.refresh(current_user)
     

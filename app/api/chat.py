@@ -366,6 +366,47 @@ async def send_message(
                 logger.error(f"Phase 2B accountability prompt error: {e}", exc_info=True)
                 # Don't fail the request if accountability prompt generation fails
         
+        # PHASE 3: PERSONALITY ROUTER - Determine accountability style
+        accountability_style = None
+        if PHASE_2B_AVAILABLE:
+            try:
+                from app.services.personality_router import get_personality_router
+                
+                router = get_personality_router()
+                
+                # Get user's accountability style preference
+                user_preference = getattr(current_user, 'accountability_style', None)
+                
+                # Determine appropriate style based on context
+                routing_decision = router.determine_style(
+                    user_preference=user_preference,
+                    conversation_depth=new_depth if new_depth else None,
+                    user_state=None,  # Could be extracted from conversation in future
+                    context_signals={
+                        'overdue_goals': len(overdue_items) if 'overdue_items' in locals() else 0,
+                        'active_goals': len(active_goals) if 'active_goals' in locals() else 0
+                    }
+                )
+                
+                accountability_style = routing_decision['style']
+                
+                # Log routing decision
+                router.log_routing_decision(
+                    user_id=str(current_user.id),
+                    decision=routing_decision,
+                    conversation_id=str(conversation.id)
+                )
+                
+                logger.info(
+                    f"Personality routing: style={accountability_style}, "
+                    f"reason={routing_decision['reason']}, "
+                    f"confidence={routing_decision['confidence']:.2f}"
+                )
+                
+            except Exception as e:
+                logger.error(f"Phase 3 personality routing error: {e}", exc_info=True)
+                # Don't fail the request if personality routing fails
+        
         # Choose AI service based on configuration
         use_groq = getattr(settings, 'USE_GROQ', True)  # Default to Groq if not set
         if use_groq:
@@ -381,7 +422,9 @@ async def send_message(
             mode=chat_request.mode,
             conversation_history=conversation_history,
             user_tier=current_user.tier.value if hasattr(current_user, "tier") else None,
-            memory_context=combined_memory_context  # Pass combined memory context to AI service
+            memory_context=combined_memory_context,  # Pass combined memory context to AI service
+            accountability_style=accountability_style,  # Phase 3: Pass accountability style
+            conversation_depth=new_depth if new_depth else None  # Phase 3: Pass conversation depth
         )
         
         response_time_ms = int((datetime.utcnow() - start_time).total_seconds() * 1000)
@@ -788,6 +831,34 @@ async def stream_message(
         full_response = ""
 
         try:
+            # PHASE 3: PERSONALITY ROUTER - Determine accountability style
+            accountability_style = None
+            if PHASE_2B_AVAILABLE:
+                try:
+                    from app.services.personality_router import get_personality_router
+                    
+                    router = get_personality_router()
+                    
+                    # Get user's accountability style preference
+                    user_preference = getattr(current_user, 'accountability_style', None)
+                    
+                    # Determine appropriate style based on context
+                    routing_decision = router.determine_style(
+                        user_preference=user_preference,
+                        conversation_depth=new_depth if new_depth else None,
+                        user_state=None
+                    )
+                    
+                    accountability_style = routing_decision['style']
+                    
+                    logger.info(
+                        f"Streaming personality routing: style={accountability_style}, "
+                        f"reason={routing_decision['reason']}"
+                    )
+                    
+                except Exception as e:
+                    logger.error(f"Phase 3 personality routing error in streaming: {e}", exc_info=True)
+            
             # Choose AI service based on configuration
             use_groq = getattr(settings, 'USE_GROQ', True)  # Default to Groq if not set
             if use_groq:
@@ -802,7 +873,9 @@ async def stream_message(
                 message=chat_request.message,
                 mode=chat_request.mode,
                 conversation_history=conversation_history,
-                user_tier=current_user.tier.value if hasattr(current_user, "tier") else None
+                user_tier=current_user.tier.value if hasattr(current_user, "tier") else None,
+                accountability_style=accountability_style,  # Phase 3: Pass accountability style
+                conversation_depth=new_depth if new_depth else None  # Phase 3: Pass conversation depth
             )
             async for chunk in response:
                 full_response += chunk

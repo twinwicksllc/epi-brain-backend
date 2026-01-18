@@ -154,7 +154,11 @@ Tone: Motivational, supportive, health-focused, and encouraging."""
         self,
         message: str,
         mode: str,
-        conversation_history: Optional[List[Message]] = None
+        conversation_history: Optional[List[Message]] = None,
+        user_tier: Optional[str] = None,
+        memory_context: Optional[str] = None,
+        accountability_style: Optional[str] = None,
+        conversation_depth: Optional[float] = None
     ) -> Dict:
         """
         Get AI response from Claude
@@ -163,6 +167,10 @@ Tone: Motivational, supportive, health-focused, and encouraging."""
             message: User's message
             mode: Personality mode
             conversation_history: Previous messages in conversation
+            user_tier: User's subscription tier
+            memory_context: User's memory context (injected into system prompt)
+            accountability_style: Accountability style (tactical, grace, analyst, adaptive)
+            conversation_depth: Current conversation depth (0.0-1.0)
             
         Returns:
             Dictionary with response content and metadata
@@ -181,6 +189,31 @@ Tone: Motivational, supportive, health-focused, and encouraging."""
             
             # Get system prompt
             system_prompt = self._get_system_prompt(mode)
+            
+            # Inject accountability style into system prompt (Phase 3)
+            if accountability_style:
+                try:
+                    from app.prompts.accountability_styles import get_accountability_prompt
+                    accountability_prompt = get_accountability_prompt(accountability_style, conversation_depth)
+                    system_prompt = f"""{system_prompt}
+
+<accountability_style>
+{accountability_prompt}
+</accountability_style>
+
+Apply the accountability style above when providing support and guidance. Maintain consistency with this style throughout the conversation."""
+                except Exception as e:
+                    logger.error(f"Error loading accountability style: {e}")
+            
+            # Inject memory context into system prompt
+            if memory_context:
+                system_prompt = f"""{system_prompt}
+
+<user_memory>
+{memory_context}
+</user_memory>
+
+Use the user memory above to personalize your responses. Apply preferences naturally without explicitly mentioning them unless relevant to the conversation."""
             
             # Call Claude API
             response = self.client.messages.create(

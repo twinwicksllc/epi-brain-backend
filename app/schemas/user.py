@@ -31,6 +31,7 @@ class UserUpdate(BaseModel):
     """Schema for updating user profile"""
     voice_preference: Optional[VoicePreference] = None
     primary_mode: Optional[str] = None
+    accountability_style: Optional[str] = None  # Phase 3: tactical, grace, analyst, adaptive
 
 
 class UserResponse(UserBase):
