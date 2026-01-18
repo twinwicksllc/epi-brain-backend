@@ -38,6 +38,9 @@ class Conversation(Base):
     # Relationships
     user = relationship("User", back_populates="conversations")
     messages = relationship("Message", back_populates="conversation", cascade="all, delete-orphan", order_by="Message.created_at")
+    thought_records = relationship("ThoughtRecord", back_populates="conversation", cascade="all, delete-orphan")
+    behavioral_activations = relationship("BehavioralActivation", back_populates="conversation", cascade="all, delete-orphan")
+    exposure_hierarchies = relationship("ExposureHierarchy", back_populates="conversation", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<Conversation {self.id} - {self.mode}>"

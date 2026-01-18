@@ -71,6 +71,9 @@ class User(Base):
     
     # Relationships
     conversations = relationship("Conversation", back_populates="user", cascade="all, delete-orphan")
+    thought_records = relationship("ThoughtRecord", back_populates="user", cascade="all, delete-orphan")
+    behavioral_activations = relationship("BehavioralActivation", back_populates="user", cascade="all, delete-orphan")
+    exposure_hierarchies = relationship("ExposureHierarchy", back_populates="user", cascade="all, delete-orphan")
     learning_patterns = relationship("LearningPattern", back_populates="user", cascade="all, delete-orphan")
     
     def __repr__(self):
