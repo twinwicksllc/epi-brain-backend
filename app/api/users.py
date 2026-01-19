@@ -67,6 +67,13 @@ async def update_user_profile(
                 detail=f"Invalid accountability style. Must be one of: {', '.join(valid_styles)}"
             )
     
+    # Phase 3: Update sentiment and depth sensitivity settings
+    if user_update.sentiment_override_enabled is not None:
+        current_user.sentiment_override_enabled = user_update.sentiment_override_enabled
+    
+    if user_update.depth_sensitivity_enabled is not None:
+        current_user.depth_sensitivity_enabled = user_update.depth_sensitivity_enabled
+    
     db.commit()
     db.refresh(current_user)
     
