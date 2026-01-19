@@ -57,6 +57,25 @@ except ImportError as e:
     logger.warning(f"Phase 2B goal management services not available: {e}")
     PHASE_2B_AVAILABLE = False
 
+# Phase 3 imports - personality router (wrapped in try/except for safety)
+try:
+    from app.services.personality_router import PersonalityRouter
+    PHASE_3_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Phase 3 personality router not available: {e}")
+    PHASE_3_AVAILABLE = False
+
+# Phase 4 imports - CBT and safety (wrapped in try/except for safety)
+try:
+    from app.services.thought_record_service import ThoughtRecordService
+    from app.services.behavioral_activation_service import BehavioralActivationService
+    from app.services.exposure_hierarchy_service import ExposureHierarchyService
+    from app.services.safety_service import SafetyService
+    PHASE_4_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Phase 4 CBT and safety services not available: {e}")
+    PHASE_4_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
@@ -113,6 +132,55 @@ async def send_message(
     )
     db.add(user_message)
     db.flush()
+    
+    # PHASE 4: SAFETY CHECKS (Psychology Expert Mode)
+    safety_context = ""
+    is_high_risk = False
+    if PHASE_4_AVAILABLE and chat_request.mode == "psychology_expert":
+        try:
+            safety_service = SafetyService()
+            
+            # Detect high-risk content
+            is_high_risk, risk_categories, severity = safety_service.detect_high_risk_content(
+                chat_request.message
+            )
+            
+            if is_high_risk:
+                # Log safety event
+                safety_service.log_safety_event(
+                    user_id=str(current_user.id),
+                    categories=risk_categories,
+                    severity=severity,
+                    message_preview=chat_request.message
+                )
+                
+                # Add crisis response to context
+                crisis_response = safety_service.get_crisis_response(
+                    categories=risk_categories,
+                    region="US"  # TODO: Get user's region from profile
+                )
+                
+                # Add safety prompt additions
+                safety_context = safety_service.get_safety_prompt_addition(risk_categories)
+                safety_context += f"\n\n**CRISIS RESPONSE TO INCLUDE:**\n{crisis_response}"
+                
+                logger.warning(
+                    f"High-risk content detected in conversation {conversation.id}: "
+                    f"categories={risk_categories}, severity={severity}"
+                )
+            
+            # Add disclaimer if needed
+            message_count = db.query(Message).filter(
+                Message.conversation_id == conversation.id
+            ).count()
+            
+            if safety_service.should_show_disclaimer(message_count):
+                disclaimer = safety_service.get_disclaimer("psychology_expert")
+                safety_context += f"\n\n**INCLUDE THIS DISCLAIMER:**\n{disclaimer}"
+                
+        except Exception as e:
+            logger.error(f"Error in safety checks: {e}", exc_info=True)
+            # Don't fail the request if safety checks fail
     
     # Check if depth tracking is enabled for this mode
     depth_enabled = (
@@ -265,6 +333,13 @@ async def send_message(
                 combined_memory_context = f"{combined_memory_context}\n\n{goal_context}"
             else:
                 combined_memory_context = goal_context
+        # PHASE 4: Add safety context for Psychology Expert mode
+        if safety_context:
+            if combined_memory_context:
+                combined_memory_context = f"{combined_memory_context}\n\n{safety_context}"
+            else:
+                combined_memory_context = safety_context
+
         
         # PHASE 2: Parse user message for core variable information
         if PHASE_2_AVAILABLE and settings.MEMORY_ENABLED:

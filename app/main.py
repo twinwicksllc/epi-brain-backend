@@ -11,6 +11,13 @@ import logging
 from app.config import settings
 from app.database import engine, Base
 from app.api import auth, chat, users, modes, admin, voice, memory
+# Phase 4 imports
+try:
+    from app.api import thought_records, behavioral_activation, exposure_hierarchy
+    PHASE_4_API_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Phase 4 API endpoints not available: {e}")
+    PHASE_4_API_AVAILABLE = False
 
 # Configure logging
 logging.basicConfig(
@@ -123,6 +130,12 @@ from app.api import goals, habits, check_ins
 app.include_router(goals.router, prefix=f"{settings.API_V1_PREFIX}/goals", tags=["Goals"])
 app.include_router(habits.router, prefix=f"{settings.API_V1_PREFIX}/habits", tags=["Habits"])
 app.include_router(check_ins.router, prefix=f"{settings.API_V1_PREFIX}/check-ins", tags=["Check-ins"])
+
+# Phase 4: CBT API endpoints
+if PHASE_4_API_AVAILABLE:
+    app.include_router(thought_records.router, prefix=f"{settings.API_V1_PREFIX}/thought-records", tags=["Thought Records"])
+    app.include_router(behavioral_activation.router, prefix=f"{settings.API_V1_PREFIX}/behavioral-activation", tags=["Behavioral Activation"])
+    app.include_router(exposure_hierarchy.router, prefix=f"{settings.API_V1_PREFIX}/exposure-hierarchy", tags=["Exposure Hierarchy"])
 
 
 # Global exception handler
