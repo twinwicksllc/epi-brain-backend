@@ -26,6 +26,9 @@ from app.services.depth_engine import ConversationDepthEngine
 from app.config import settings
 import logging
 
+# Initialize logger before any imports that might use it
+logger = logging.getLogger(__name__)
+
 # Phase 2 imports - wrapped in try/except for safety
 try:
     from app.services.core_variable_collector import CoreVariableCollector
@@ -75,8 +78,6 @@ try:
 except ImportError as e:
     logger.warning(f"Phase 4 CBT and safety services not available: {e}")
     PHASE_4_AVAILABLE = False
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
