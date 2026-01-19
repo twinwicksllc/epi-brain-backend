@@ -8,6 +8,9 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 import logging
 
+# Initialize logger early
+logger = logging.getLogger(__name__)
+
 from app.config import settings
 from app.database import engine, Base
 from app.api import auth, chat, users, modes, admin, voice, memory
@@ -24,8 +27,6 @@ logging.basicConfig(
     level=getattr(logging, settings.LOG_LEVEL),
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-
-logger = logging.getLogger(__name__)
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
