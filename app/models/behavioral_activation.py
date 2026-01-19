@@ -3,9 +3,11 @@ Behavioral Activation Model for CBT (Cognitive Behavioral Therapy)
 Tracks activities and their impact on mood to break avoidance cycles
 """
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Float, Text, Enum as SQLEnum
+from sqlalchemy import Column, String, DateTime, Integer, Float, Text, Enum as SQLEnum, ForeignKey
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from app.database import Base
+import uuid
 import enum
 
 
@@ -27,22 +29,22 @@ class BehavioralActivation(Base):
     """
     __tablename__ = "behavioral_activations"
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    conversation_id = Column(UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=True)
     
     # Activity details
-    activity = Column(Text, nullable=False, help_text="Activity description")
-    activity_category = Column(String(50), nullable=True, help_text="Category: pleasure, mastery, social, exercise, etc.")
+    activity = Column(Text, nullable=False)
+    activity_category = Column(String(50), nullable=True)
     
     # Mood before activity
-    mood_before = Column(Integer, nullable=False, help_text="Mood 1-10 before activity")
+    mood_before = Column(Integer, nullable=False)  # 1-10 scale
     
     # Mood after activity
-    mood_after = Column(Integer, nullable=True, help_text="Mood 1-10 after activity")
+    mood_after = Column(Integer, nullable=True)  # 1-10 scale
     
     # Difficulty rating (avoidance level)
-    difficulty_rating = Column(Integer, nullable=True, help_text="Difficulty 1-10 (avoidance level)")
+    difficulty_rating = Column(Integer, nullable=True)  # 1-10 scale
     
     # Completion status
     completion_status = Column(
@@ -52,15 +54,15 @@ class BehavioralActivation(Base):
     )
     
     # Activity scheduling
-    scheduled_for = Column(DateTime, nullable=True, help_text="When is this scheduled?")
-    completed_at = Column(DateTime, nullable=True, help_text="When was this completed?")
+    scheduled_for = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
     
     # Notes
-    notes = Column(Text, nullable=True, help_text="Additional notes about the activity")
+    notes = Column(Text, nullable=True)
     
     # Metadata
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
     # Relationships
     user = relationship("User", back_populates="behavioral_activations")
@@ -72,9 +74,9 @@ class BehavioralActivation(Base):
     def to_dict(self):
         """Convert to dictionary for API responses"""
         return {
-            "id": self.id,
-            "user_id": self.user_id,
-            "conversation_id": self.conversation_id,
+            "id": str(self.id),
+            "user_id": str(self.user_id),
+            "conversation_id": str(self.conversation_id) if self.conversation_id else None,
             "activity": self.activity,
             "activity_category": self.activity_category,
             "mood_before": self.mood_before,

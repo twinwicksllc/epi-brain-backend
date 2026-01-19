@@ -3,7 +3,8 @@ Behavioral Activation Service for CBT (Cognitive Behavioral Therapy)
 Tracks activities and their impact on mood to break avoidance cycles
 """
 from typing import List, Optional, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime
+import uuid, timedelta
 from sqlalchemy.orm import Session
 from app.models.behavioral_activation import BehavioralActivation, ActivityCompletionStatus
 import logging
@@ -19,12 +20,12 @@ class BehavioralActivationService:
     
     def create_activity(
         self,
-        user_id: int,
+        user_id: uuid.UUID,
         activity: str,
         mood_before: int,
         activity_category: Optional[str] = None,
         difficulty_rating: Optional[int] = None,
-        conversation_id: Optional[int] = None,
+        conversation_id: Optional[uuid.UUID] = None,
         scheduled_for: Optional[datetime] = None,
         notes: Optional[str] = None
     ) -> BehavioralActivation:
@@ -69,7 +70,7 @@ class BehavioralActivationService:
             logger.error(f"Error creating activity: {e}")
             raise
     
-    def get_activity(self, activity_id: int, user_id: int) -> Optional[BehavioralActivation]:
+    def get_activity(self, activity_id: uuid.UUID, user_id: uuid.UUID) -> Optional[BehavioralActivation]:
         """Get a specific activity by ID"""
         return self.db.query(BehavioralActivation).filter(
             BehavioralActivation.id == activity_id,
@@ -78,7 +79,7 @@ class BehavioralActivationService:
     
     def get_user_activities(
         self,
-        user_id: int,
+        user_id: uuid.UUID,
         status: Optional[ActivityCompletionStatus] = None,
         limit: int = 50,
         offset: int = 0
@@ -95,8 +96,8 @@ class BehavioralActivationService:
     
     def complete_activity(
         self,
-        activity_id: int,
-        user_id: int,
+        activity_id: uuid.UUID,
+        user_id: uuid.UUID,
         mood_after: int,
         notes: Optional[str] = None
     ) -> Optional[BehavioralActivation]:
@@ -138,8 +139,8 @@ class BehavioralActivationService:
     
     def skip_activity(
         self,
-        activity_id: int,
-        user_id: int,
+        activity_id: uuid.UUID,
+        user_id: uuid.UUID,
         notes: Optional[str] = None
     ) -> Optional[BehavioralActivation]:
         """Mark an activity as skipped"""
@@ -167,8 +168,8 @@ class BehavioralActivationService:
     
     def update_activity(
         self,
-        activity_id: int,
-        user_id: int,
+        activity_id: uuid.UUID,
+        user_id: uuid.UUID,
         **kwargs
     ) -> Optional[BehavioralActivation]:
         """Update an activity"""
@@ -194,7 +195,7 @@ class BehavioralActivationService:
             logger.error(f"Error updating activity: {e}")
             raise
     
-    def delete_activity(self, activity_id: int, user_id: int) -> bool:
+    def delete_activity(self, activity_id: uuid.UUID, user_id: uuid.UUID) -> bool:
         """Delete an activity"""
         activity = self.get_activity(activity_id, user_id)
         
@@ -214,7 +215,7 @@ class BehavioralActivationService:
     
     def get_mood_trends(
         self,
-        user_id: int,
+        user_id: uuid.UUID,
         days: int = 30
     ) -> Dict[str, Any]:
         """
@@ -256,7 +257,7 @@ class BehavioralActivationService:
     
     def get_activity_categories(
         self,
-        user_id: int,
+        user_id: uuid.UUID,
         days: int = 30
     ) -> Dict[str, int]:
         """
@@ -286,7 +287,7 @@ class BehavioralActivationService:
     
     def get_most_improving_activities(
         self,
-        user_id: int,
+        user_id: uuid.UUID,
         days: int = 30,
         limit: int = 5
     ) -> List[Dict[str, Any]]:
@@ -334,7 +335,7 @@ class BehavioralActivationService:
     
     def get_avoidance_patterns(
         self,
-        user_id: int,
+        user_id: uuid.UUID,
         days: int = 30
     ) -> Dict[str, Any]:
         """
@@ -378,7 +379,7 @@ class BehavioralActivationService:
     
     def suggest_activities(
         self,
-        user_id: int,
+        user_id: uuid.UUID,
         mood: int,
         limit: int = 5
     ) -> List[Dict[str, str]]:

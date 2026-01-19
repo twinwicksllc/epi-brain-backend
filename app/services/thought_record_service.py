@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.models.thought_record import ThoughtRecord, CognitiveDistortionType
 from app.models.user import User
 from app.models.conversation import Conversation
+import uuid
 import logging
 
 logger = logging.getLogger(__name__)
@@ -21,13 +22,13 @@ class ThoughtRecordService:
     
     def create_thought_record(
         self,
-        user_id: int,
+        user_id: uuid.UUID,
         situation: str,
         automatic_thought: str,
         emotion: str,
         emotion_intensity: int,
         cognitive_distortion: CognitiveDistortionType,
-        conversation_id: Optional[int] = None,
+        conversation_id: Optional[uuid.UUID] = None,
         evidence_for: Optional[str] = None,
         evidence_against: Optional[str] = None,
         challenging_thought: Optional[str] = None,
@@ -38,13 +39,13 @@ class ThoughtRecordService:
         Create a new thought record
         
         Args:
-            user_id: User ID
+            user_id: User ID (UUID)
             situation: What happened
             automatic_thought: The automatic negative thought
             emotion: Emotion felt
             emotion_intensity: Emotion intensity (1-10)
             cognitive_distortion: Type of cognitive distortion
-            conversation_id: Optional conversation ID
+            conversation_id: Optional conversation ID (UUID)
             evidence_for: Evidence supporting the thought
             evidence_against: Evidence against the thought
             challenging_thought: Balanced alternative thought
@@ -82,7 +83,7 @@ class ThoughtRecordService:
             logger.error(f"Error creating thought record: {e}")
             raise
     
-    def get_thought_record(self, record_id: int, user_id: int) -> Optional[ThoughtRecord]:
+    def get_thought_record(self, record_id: uuid.UUID, user_id: uuid.UUID) -> Optional[ThoughtRecord]:
         """Get a specific thought record by ID"""
         return self.db.query(ThoughtRecord).filter(
             ThoughtRecord.id == record_id,
@@ -91,7 +92,7 @@ class ThoughtRecordService:
     
     def get_user_thought_records(
         self,
-        user_id: int,
+        user_id: uuid.UUID,
         limit: int = 50,
         offset: int = 0
     ) -> List[ThoughtRecord]:
@@ -102,8 +103,8 @@ class ThoughtRecordService:
     
     def update_thought_record(
         self,
-        record_id: int,
-        user_id: int,
+        record_id: uuid.UUID,
+        user_id: uuid.UUID,
         **kwargs
     ) -> Optional[ThoughtRecord]:
         """Update a thought record"""
@@ -129,7 +130,7 @@ class ThoughtRecordService:
             logger.error(f"Error updating thought record: {e}")
             raise
     
-    def delete_thought_record(self, record_id: int, user_id: int) -> bool:
+    def delete_thought_record(self, record_id: uuid.UUID, user_id: uuid.UUID) -> bool:
         """Delete a thought record"""
         thought_record = self.get_thought_record(record_id, user_id)
         
@@ -149,14 +150,14 @@ class ThoughtRecordService:
     
     def get_distortion_patterns(
         self,
-        user_id: int,
+        user_id: uuid.UUID,
         days: int = 30
     ) -> Dict[str, int]:
         """
         Analyze cognitive distortion patterns for a user
         
         Args:
-            user_id: User ID
+            user_id: User ID (UUID)
             days: Number of days to analyze
         
         Returns:
@@ -178,7 +179,7 @@ class ThoughtRecordService:
     
     def get_most_common_distortions(
         self,
-        user_id: int,
+        user_id: uuid.UUID,
         days: int = 30,
         limit: int = 3
     ) -> List[Dict[str, Any]]:
@@ -186,7 +187,7 @@ class ThoughtRecordService:
         Get the most common cognitive distortions for a user
         
         Args:
-            user_id: User ID
+            user_id: User ID (UUID)
             days: Number of days to analyze
             limit: Number of top distortions to return
         
@@ -212,14 +213,14 @@ class ThoughtRecordService:
     
     def get_emotion_trends(
         self,
-        user_id: int,
+        user_id: uuid.UUID,
         days: int = 30
     ) -> Dict[str, Any]:
         """
         Analyze emotion intensity trends over time
         
         Args:
-            user_id: User ID
+            user_id: User ID (UUID)
             days: Number of days to analyze
         
         Returns:
@@ -257,14 +258,14 @@ class ThoughtRecordService:
     
     def get_insights(
         self,
-        user_id: int,
+        user_id: uuid.UUID,
         days: int = 30
     ) -> Dict[str, Any]:
         """
         Get comprehensive insights about a user's thought patterns
         
         Args:
-            user_id: User ID
+            user_id: User ID (UUID)
             days: Number of days to analyze
         
         Returns:

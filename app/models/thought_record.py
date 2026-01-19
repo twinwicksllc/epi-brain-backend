@@ -3,9 +3,11 @@ Thought Record Model for CBT (Cognitive Behavioral Therapy)
 Tracks user's cognitive distortions and thought patterns
 """
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Float, Text, Enum as SQLEnum
+from sqlalchemy import Column, String, DateTime, Integer, Float, Text, Enum as SQLEnum, ForeignKey
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from app.database import Base
+import uuid
 import enum
 
 
@@ -34,43 +36,42 @@ class ThoughtRecord(Base):
     """
     __tablename__ = "thought_records"
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    conversation_id = Column(UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=True)
     
     # The situation that triggered the thought
-    situation = Column(Text, nullable=False, help_text="What happened?")
+    situation = Column(Text, nullable=False)
     
     # The automatic negative thought
-    automatic_thought = Column(Text, nullable=False, help_text="What went through your mind?")
+    automatic_thought = Column(Text, nullable=False)
     
     # Emotional response
-    emotion = Column(String(100), nullable=False, help_text="How did you feel?")
-    emotion_intensity = Column(Integer, nullable=False, help_text="Intensity 1-10")
+    emotion = Column(String(100), nullable=False)
+    emotion_intensity = Column(Integer, nullable=False)  # 1-10 scale
     
     # Cognitive distortion type
     cognitive_distortion = Column(
         SQLEnum(CognitiveDistortionType),
-        nullable=False,
-        help_text="Type of cognitive distortion"
+        nullable=False
     )
     
     # Evidence for the thought
-    evidence_for = Column(Text, nullable=True, help_text="What evidence supports this thought?")
+    evidence_for = Column(Text, nullable=True)
     
     # Evidence against the thought
-    evidence_against = Column(Text, nullable=True, help_text="What evidence contradicts this thought?")
+    evidence_against = Column(Text, nullable=True)
     
     # Balanced alternative thought
-    challenging_thought = Column(Text, nullable=True, help_text="What's a more balanced thought?")
+    challenging_thought = Column(Text, nullable=True)
     
     # Outcome after challenging the thought
-    outcome = Column(Text, nullable=True, help_text="How do you feel now?")
-    outcome_intensity = Column(Integer, nullable=True, help_text="Intensity after 1-10")
+    outcome = Column(Text, nullable=True)
+    outcome_intensity = Column(Integer, nullable=True)  # 1-10 scale
     
     # Metadata
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
     # Relationships
     user = relationship("User", back_populates="thought_records")
@@ -82,9 +83,9 @@ class ThoughtRecord(Base):
     def to_dict(self):
         """Convert to dictionary for API responses"""
         return {
-            "id": self.id,
-            "user_id": self.user_id,
-            "conversation_id": self.conversation_id,
+            "id": str(self.id),
+            "user_id": str(self.user_id),
+            "conversation_id": str(self.conversation_id) if self.conversation_id else None,
             "situation": self.situation,
             "automatic_thought": self.automatic_thought,
             "emotion": self.emotion,

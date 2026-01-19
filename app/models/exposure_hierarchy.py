@@ -3,9 +3,11 @@ Exposure Hierarchy Model for CBT (Cognitive Behavioral Therapy)
 Tracks gradual exposure to feared situations to reduce anxiety
 """
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Float, Text, Enum as SQLEnum
+from sqlalchemy import Column, String, DateTime, Integer, Float, Text, Enum as SQLEnum, ForeignKey
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from app.database import Base
+import uuid
 import enum
 
 
@@ -28,23 +30,23 @@ class ExposureHierarchy(Base):
     """
     __tablename__ = "exposure_hierarchies"
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    conversation_id = Column(UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=True)
     
     # Hierarchy group (multiple steps can belong to same fear/hierarchy)
-    hierarchy_group = Column(String(100), nullable=False, help_text="Name of the fear/hierarchy group")
+    hierarchy_group = Column(String(100), nullable=False)
     
     # The feared situation
-    feared_situation = Column(Text, nullable=False, help_text="What is the feared situation?")
+    feared_situation = Column(Text, nullable=False)
     
     # Difficulty level (Subjective Units of Distress Scale)
-    difficulty_level = Column(Integer, nullable=False, help_text="Difficulty 0-100 (SUDS)")
+    difficulty_level = Column(Integer, nullable=False)  # 0-100 scale
     
     # Anxiety levels
-    anxiety_before = Column(Integer, nullable=False, help_text="Anxiety 1-10 before exposure")
-    anxiety_during = Column(Integer, nullable=True, help_text="Anxiety 1-10 during exposure")
-    anxiety_after = Column(Integer, nullable=True, help_text="Anxiety 1-10 after exposure")
+    anxiety_before = Column(Integer, nullable=False)  # 1-10 scale
+    anxiety_during = Column(Integer, nullable=True)  # 1-10 scale
+    anxiety_after = Column(Integer, nullable=True)  # 1-10 scale
     
     # Completion status
     status = Column(
@@ -54,16 +56,16 @@ class ExposureHierarchy(Base):
     )
     
     # Timing
-    scheduled_for = Column(DateTime, nullable=True, help_text="When is this exposure scheduled?")
-    completed_at = Column(DateTime, nullable=True, help_text="When was this exposure completed?")
-    duration_minutes = Column(Integer, nullable=True, help_text="Duration of exposure in minutes")
+    scheduled_for = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    duration_minutes = Column(Integer, nullable=True)
     
     # Notes
-    notes = Column(Text, nullable=True, help_text="Notes about the exposure experience")
+    notes = Column(Text, nullable=True)
     
     # Metadata
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
     # Relationships
     user = relationship("User", back_populates="exposure_hierarchies")
@@ -75,9 +77,9 @@ class ExposureHierarchy(Base):
     def to_dict(self):
         """Convert to dictionary for API responses"""
         return {
-            "id": self.id,
-            "user_id": self.user_id,
-            "conversation_id": self.conversation_id,
+            "id": str(self.id),
+            "user_id": str(self.user_id),
+            "conversation_id": str(self.conversation_id) if self.conversation_id else None,
             "hierarchy_group": self.hierarchy_group,
             "feared_situation": self.feared_situation,
             "difficulty_level": self.difficulty_level,

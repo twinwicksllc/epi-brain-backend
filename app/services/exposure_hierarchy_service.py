@@ -3,7 +3,8 @@ Exposure Hierarchy Service for CBT (Cognitive Behavioral Therapy)
 Tracks gradual exposure to feared situations to reduce anxiety
 """
 from typing import List, Optional, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime
+import uuid, timedelta
 from sqlalchemy.orm import Session
 from app.models.exposure_hierarchy import ExposureHierarchy, ExposureStatus
 import logging
@@ -19,12 +20,12 @@ class ExposureHierarchyService:
     
     def create_exposure_step(
         self,
-        user_id: int,
+        user_id: uuid.UUID,
         hierarchy_group: str,
         feared_situation: str,
         difficulty_level: int,
         anxiety_before: int,
-        conversation_id: Optional[int] = None,
+        conversation_id: Optional[uuid.UUID] = None,
         scheduled_for: Optional[datetime] = None,
         notes: Optional[str] = None
     ) -> ExposureHierarchy:
@@ -69,7 +70,7 @@ class ExposureHierarchyService:
             logger.error(f"Error creating exposure step: {e}")
             raise
     
-    def get_exposure_step(self, step_id: int, user_id: int) -> Optional[ExposureHierarchy]:
+    def get_exposure_step(self, step_id: uuid.UUID, user_id: uuid.UUID) -> Optional[ExposureHierarchy]:
         """Get a specific exposure step by ID"""
         return self.db.query(ExposureHierarchy).filter(
             ExposureHierarchy.id == step_id,
@@ -78,7 +79,7 @@ class ExposureHierarchyService:
     
     def get_user_exposure_steps(
         self,
-        user_id: int,
+        user_id: uuid.UUID,
         hierarchy_group: Optional[str] = None,
         status: Optional[ExposureStatus] = None,
         limit: int = 50,
@@ -97,7 +98,7 @@ class ExposureHierarchyService:
         
         return query.order_by(ExposureHierarchy.difficulty_level.asc()).limit(limit).offset(offset).all()
     
-    def get_hierarchy_groups(self, user_id: int) -> List[str]:
+    def get_hierarchy_groups(self, user_id: uuid.UUID) -> List[str]:
         """Get all hierarchy groups for a user"""
         groups = self.db.query(ExposureHierarchy.hierarchy_group).filter(
             ExposureHierarchy.user_id == user_id
@@ -107,8 +108,8 @@ class ExposureHierarchyService:
     
     def start_exposure(
         self,
-        step_id: int,
-        user_id: int
+        step_id: uuid.UUID,
+        user_id: uuid.UUID
     ) -> Optional[ExposureHierarchy]:
         """Mark an exposure step as in progress"""
         exposure = self.get_exposure_step(step_id, user_id)
@@ -132,8 +133,8 @@ class ExposureHierarchyService:
     
     def complete_exposure(
         self,
-        step_id: int,
-        user_id: int,
+        step_id: uuid.UUID,
+        user_id: uuid.UUID,
         anxiety_during: Optional[int] = None,
         anxiety_after: int,
         duration_minutes: Optional[int] = None,
@@ -181,8 +182,8 @@ class ExposureHierarchyService:
     
     def avoid_exposure(
         self,
-        step_id: int,
-        user_id: int,
+        step_id: uuid.UUID,
+        user_id: uuid.UUID,
         notes: Optional[str] = None
     ) -> Optional[ExposureHierarchy]:
         """Mark an exposure step as avoided"""
@@ -210,8 +211,8 @@ class ExposureHierarchyService:
     
     def update_exposure_step(
         self,
-        step_id: int,
-        user_id: int,
+        step_id: uuid.UUID,
+        user_id: uuid.UUID,
         **kwargs
     ) -> Optional[ExposureHierarchy]:
         """Update an exposure step"""
@@ -237,7 +238,7 @@ class ExposureHierarchyService:
             logger.error(f"Error updating exposure step: {e}")
             raise
     
-    def delete_exposure_step(self, step_id: int, user_id: int) -> bool:
+    def delete_exposure_step(self, step_id: uuid.UUID, user_id: uuid.UUID) -> bool:
         """Delete an exposure step"""
         exposure = self.get_exposure_step(step_id, user_id)
         
@@ -257,7 +258,7 @@ class ExposureHierarchyService:
     
     def get_exposure_progress(
         self,
-        user_id: int,
+        user_id: uuid.UUID,
         hierarchy_group: str,
         days: int = 30
     ) -> Dict[str, Any]:
@@ -307,7 +308,7 @@ class ExposureHierarchyService:
     
     def get_next_exposure_step(
         self,
-        user_id: int,
+        user_id: uuid.UUID,
         hierarchy_group: str
     ) -> Optional[ExposureHierarchy]:
         """
@@ -330,7 +331,7 @@ class ExposureHierarchyService:
     
     def get_anxiety_trends(
         self,
-        user_id: int,
+        user_id: uuid.UUID,
         hierarchy_group: Optional[str] = None,
         days: int = 30
     ) -> Dict[str, Any]:
@@ -379,7 +380,7 @@ class ExposureHierarchyService:
     
     def suggest_next_step(
         self,
-        user_id: int,
+        user_id: uuid.UUID,
         hierarchy_group: str
     ) -> Optional[Dict[str, Any]]:
         """
@@ -430,7 +431,7 @@ class ExposureHierarchyService:
     
     def get_hierarchy_summary(
         self,
-        user_id: int
+        user_id: uuid.UUID
     ) -> List[Dict[str, Any]]:
         """
         Get summary of all hierarchy groups for a user
