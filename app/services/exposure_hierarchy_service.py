@@ -4,7 +4,8 @@ Tracks gradual exposure to feared situations to reduce anxiety
 """
 from typing import List, Optional, Dict, Any
 from datetime import datetime
-import uuid, timedelta
+from datetime import datetime, timedelta
+import uuid
 from sqlalchemy.orm import Session
 from app.models.exposure_hierarchy import ExposureHierarchy, ExposureStatus
 import logging
