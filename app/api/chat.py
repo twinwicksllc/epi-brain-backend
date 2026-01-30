@@ -16,7 +16,7 @@ from app.models.conversation import Conversation
 from app.models.message import Message, MessageRole
 from app.schemas.conversation import ConversationResponse, ConversationCreate, ConversationWithMessages
 from app.schemas.message import ChatRequest, ChatResponse, MessageResponse
-from app.core.dependencies import get_current_active_user, check_message_limit
+from app.core.dependencies import get_current_active_user, check_message_limit, verify_personality_access
 from app.core.exceptions import ConversationNotFound, UnauthorizedAccess, MessageLimitExceeded
 from app.services.claude import ClaudeService
 from app.services.groq_service import GroqService
@@ -105,6 +105,13 @@ async def send_message(
     # Check message limit
     if not check_message_limit(current_user, db):
         raise MessageLimitExceeded()
+    
+    # Check personality access
+    if chat_request.mode not in current_user.subscribed_personalities:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not subscribed to this personality."
+        )
     
     # Get or create conversation
     if chat_request.conversation_id:
@@ -834,6 +841,13 @@ async def stream_message(
     # Check message limit
     if not check_message_limit(current_user, db):
         raise MessageLimitExceeded()
+    
+    # Check personality access
+    if chat_request.mode not in current_user.subscribed_personalities:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not subscribed to this personality."
+        )
     
     # Get or create conversation
     if chat_request.conversation_id:

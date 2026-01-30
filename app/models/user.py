@@ -59,6 +59,9 @@ class User(Base):
     # Memory system
     global_memory = Column(JSON, default={}, nullable=False)  # Persistent cross-session memory
     
+    # Subscription tracking
+    subscribed_personalities = Column(JSON, default=["personal_friend"], nullable=False)
+    
     # Accountability preferences
     accountability_style = Column(String(50), default="adaptive", nullable=False)  # tactical, grace, analyst, adaptive
     sentiment_override_enabled = Column(Boolean, default=True, nullable=False)  # Allow AI to adjust based on mood

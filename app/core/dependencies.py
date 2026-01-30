@@ -129,6 +129,38 @@ async def require_enterprise_tier(
     return current_user
 
 
+async def verify_personality_access(
+    mode: str,
+    current_user: User = Depends(get_current_active_user)
+) -> User:
+    """
+    Dependency to verify user has access to requested personality/mode
+    Admins have access to all personalities.
+    
+    Args:
+        mode: The requested personality/mode to access
+        current_user: Current user
+        
+    Returns:
+        Current user if they have access to the mode
+        
+    Raises:
+        HTTPException: If user is not subscribed to the requested personality
+    """
+    # Admin bypass - admins have access to all personalities
+    if current_user.is_admin == "true" or current_user.is_admin is True:
+        return current_user
+    
+    # Check if mode is in user's subscribed personalities
+    if mode not in current_user.subscribed_personalities:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not subscribed to this personality."
+        )
+    
+    return current_user
+
+
 def check_message_limit(user: User, db: Session) -> bool:
     """
     Check if user has exceeded their message limit
