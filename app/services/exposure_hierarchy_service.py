@@ -137,7 +137,7 @@ class ExposureHierarchyService:
         step_id: uuid.UUID,
         user_id: uuid.UUID,
         anxiety_during: Optional[int] = None,
-        anxiety_after: int,
+        anxiety_after: int = 0,
         duration_minutes: Optional[int] = None,
         notes: Optional[str] = None
     ) -> Optional[ExposureHierarchy]:
