@@ -3,11 +3,13 @@ Behavioral Activation Service for CBT (Cognitive Behavioral Therapy)
 Tracks activities and their impact on mood to break avoidance cycles
 """
 from datetime import datetime, timedelta
-from datetime import datetime
-import uuid, timedelta
+import uuid
 from sqlalchemy.orm import Session
-from app.models.behavioral_activation import BehavioralActivation, ActivityCompletionStatus
+
+from typing import Any, Dict, List, Optional
 import logging
+
+from app.models.behavioral_activation import BehavioralActivation, ActivityCompletionStatus
 
 logger = logging.getLogger(__name__)
 
