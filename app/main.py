@@ -6,10 +6,8 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
-import logging
 
-# Initialize logger early
-logger = logging.getLogger(__name__)
+from app.core.logger import logger
 
 from app.config import settings
 from app.database import engine, Base
@@ -21,12 +19,6 @@ try:
 except ImportError as e:
     logger.warning(f"Phase 4 API endpoints not available: {e}")
     PHASE_4_API_AVAILABLE = False
-
-# Configure logging
-logging.basicConfig(
-    level=getattr(logging, settings.LOG_LEVEL),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
