@@ -94,9 +94,40 @@ DISCOVERY_FAILSAFE_MESSAGE = (
     "our initial discovery, let's get your account set up first."
 )
 
+# Name validation constraints
+MAX_NAME_LENGTH = 40
+MAX_NAME_WORD_COUNT = 4
+
+def _validate_extracted_name(name: str) -> bool:
+    """
+    Validate that extracted name meets reasonable constraints.
+    Prevents 'greedy' extraction of full sentences as names.
+    
+    Args:
+        name: Extracted name string
+        
+    Returns:
+        True if valid, False if too long or too many words
+    """
+    if not name:
+        return False
+    
+    # Check character length
+    if len(name) > MAX_NAME_LENGTH:
+        logger.debug(f"Name validation failed: length {len(name)} > {MAX_NAME_LENGTH}")
+        return False
+    
+    # Check word count
+    word_count = len(name.split())
+    if word_count > MAX_NAME_WORD_COUNT:
+        logger.debug(f"Name validation failed: {word_count} words > {MAX_NAME_WORD_COUNT}")
+        return False
+    
+    return True
+
 NAME_EXTRACTION_REGEX = re.compile(
-    r"(?:my name is|i am called|call me|this is|name is|name's|i'm)\s+([A-Z][A-Za-z'\-]*(?:\s+[A-Z][A-Za-z'\-]*){0,2})(?:\s|[.,!?]|$)",
-    re.IGNORECASE
+    r"(?:my name is|i am called|call me|this is|name is|name's|i'm)\s+([\w'\-]+(?:\s+[\w'\-]+){0,3})(?:\s|[.,!?]|$)",
+    re.IGNORECASE | re.UNICODE
 )
 INTENT_EXTRACTION_REGEX = re.compile(
     r"(?:here (?:to|for|because)|i'm here (?:to|for|because)|i came (?:to|for|because)|i'm looking (?:to|for)|i want (?:to|help with)|i need (?:to|help with)|looking for help with|need help with|want help with|hoping to|want to talk about|talk about|reaching out (?:to|because|for)|i've come to|struggling with|dealing with|working on|interested in)\s+(.+?)(?:[.!?]|$)",
@@ -114,11 +145,17 @@ def _sanitize_discovery_value(value: str) -> str:
 
 
 def _capture_discovery_metadata(message: str) -> Dict[str, Optional[str]]:
-    metadata = {"captured_name": None, "captured_intent": None}
+    metadata = {"captured_name": None, "captured_intent": None, "invalid_name_format": False}
 
     name_match = NAME_EXTRACTION_REGEX.search(message)
     if name_match:
-        metadata["captured_name"] = _sanitize_discovery_value(name_match.group(1))
+        extracted_name = name_match.group(1)
+        if _validate_extracted_name(extracted_name):
+            metadata["captured_name"] = _sanitize_discovery_value(extracted_name)
+        else:
+            # Mark as invalid but don't capture the name
+            metadata["invalid_name_format"] = True
+            logger.warning(f"Invalid name format detected: '{extracted_name}' (len={len(extracted_name)}, words={len(extracted_name.split())})")  
 
     intent_match = INTENT_EXTRACTION_REGEX.search(message)
     if intent_match:
@@ -174,15 +211,47 @@ def _reset_non_engagement_count(conversation: Conversation, db: Session):
         logger.info(f"Discovery engagement detected, reset strike count for conversation {conversation.id}")
 
 
+def _get_invalid_name_count(conversation: Conversation) -> int:
+    """Get the invalid name count from conversation session memory."""
+    if not conversation.session_memory:
+        return 0
+    return conversation.session_memory.get("invalid_name_count", 0)
+
+
+def _increment_invalid_name_count(conversation: Conversation, db: Session) -> int:
+    """Increment and return the invalid name count."""
+    current_count = _get_invalid_name_count(conversation)
+    new_count = current_count + 1
+    
+    if not conversation.session_memory:
+        conversation.session_memory = {}
+    
+    conversation.session_memory["invalid_name_count"] = new_count
+    db.flush()
+    
+    logger.warning(
+        f"Invalid name format #{new_count} for conversation {conversation.id}"
+    )
+    
+    return new_count
+
+
 def _build_discovery_context(
     metadata: Dict[str, Optional[str]],
-    trigger_signup_bridge: bool
+    trigger_signup_bridge: bool,
+    invalid_name_format: bool = False
 ) -> Optional[str]:
     lines = []
     if metadata.get("captured_name"):
         lines.append(f"✓ Name Captured: {metadata['captured_name']}")
     if metadata.get("captured_intent"):
         lines.append(f"✓ Intent Captured: {metadata['captured_intent']}")
+    if invalid_name_format:
+        lines.append(
+            "⚠️ INVALID NAME FORMAT DETECTED: User provided a sentence/long text instead of a name.\n"
+            "Do NOT move to intent question. Instead, politely clarify:\n"
+            "'That sounds like an interesting story, but I didn't quite catch your name! What should I call you?'"
+        )
     if trigger_signup_bridge:
         from app.prompts.discovery_mode import DISCOVERY_MODE_SIGNUP_BRIDGE_TEMPLATE
         bridge_msg = DISCOVERY_MODE_SIGNUP_BRIDGE_TEMPLATE.format(
@@ -271,8 +340,16 @@ async def send_message(
     
     if discovery_mode_requested:
         discovery_metadata = _capture_discovery_metadata(chat_request.message)
+        
+        # Handle invalid name format
+        invalid_name_detected = discovery_metadata.get("invalid_name_format", False)
+        
         trigger_signup = bool(discovery_metadata["captured_name"] and discovery_metadata["captured_intent"])
-        discovery_context_block = _build_discovery_context(discovery_metadata, trigger_signup)
+        discovery_context_block = _build_discovery_context(
+            discovery_metadata, 
+            trigger_signup,
+            invalid_name_format=invalid_name_detected
+        )
     
     # Get or create conversation
     if chat_request.conversation_id:
@@ -296,13 +373,33 @@ async def send_message(
     # DISCOVERY FAILSAFE: Check engagement and strike counter
     if discovery_mode_requested:
         user_engaged = _check_discovery_engagement(discovery_metadata)
+        invalid_name_detected = discovery_metadata.get("invalid_name_format", False)
         current_strikes = _get_non_engagement_count(conversation)
         
         if user_engaged:
-            # User provided name or intent, reset counter
+            # User provided valid name or intent, reset counters
             _reset_non_engagement_count(conversation, db)
+        elif invalid_name_detected:
+            # User provided invalid name format (sentence instead of name)
+            invalid_name_count = _increment_invalid_name_count(conversation, db)
+            
+            # On second invalid name, treat as non-engagement and increment strike counter
+            if invalid_name_count >= 2:
+                new_strikes = _increment_non_engagement_count(conversation, db)
+                logger.warning(
+                    f"Second invalid name detected for conversation {conversation.id}, "
+                    f"incrementing strike counter to {new_strikes}"
+                )
+                
+                # Check if failsafe threshold reached
+                if new_strikes >= MAX_DISCOVERY_STRIKES:
+                    discovery_failsafe_triggered = True
+                    logger.warning(
+                        f"Discovery failsafe triggered for conversation {conversation.id} "
+                        f"after {new_strikes} non-engagement strikes (including invalid names)"
+                    )
         else:
-            # User ignored discovery prompt, increment strike counter
+            # User ignored discovery prompt entirely, increment strike counter
             new_strikes = _increment_non_engagement_count(conversation, db)
             
             # Check if failsafe threshold reached
