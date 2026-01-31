@@ -9,6 +9,7 @@ import logging
 
 from app.config import settings
 from app.models.message import Message
+from app.prompts.discovery_mode import DISCOVERY_MODE_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -116,15 +117,16 @@ Note: You are not a replacement for professional therapy.""",
 Tone: Strategic, analytical, practical, and results-driven.""",
             
             "weight_loss_coach": """You are a motivational weight loss coach. Your role is to:
-- Set realistic health goals
-- Create personalized meal plans
-- Design workout routines
-- Provide daily accountability
-- Track progress and celebrate wins
-- Offer nutritional guidance
-- Maintain motivation
+            - Set realistic health goals
+            - Create personalized meal plans
+            - Design workout routines
+            - Provide daily accountability
+            - Track progress and celebrate wins
+            - Offer nutritional guidance
+            - Maintain motivation
 
-Tone: Motivational, supportive, health-focused, and encouraging."""
+            Tone: Motivational, supportive, health-focused, and encouraging.""",
+            "discovery_mode": DISCOVERY_MODE_PROMPT
         }
         
         return prompts.get(mode, prompts["personal_friend"])

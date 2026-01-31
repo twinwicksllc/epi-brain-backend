@@ -5,10 +5,11 @@ Chat API Endpoints
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from typing import List, AsyncGenerator
+from typing import List, AsyncGenerator, Dict, Optional
 from uuid import UUID
 from datetime import datetime
 import json
+import re
 
 from app.database import get_db
 from app.models.user import User
@@ -16,11 +17,12 @@ from app.models.conversation import Conversation
 from app.models.message import Message, MessageRole
 from app.schemas.conversation import ConversationResponse, ConversationCreate, ConversationWithMessages
 from app.schemas.message import ChatRequest, ChatResponse, MessageResponse
-from app.core.dependencies import get_current_active_user, check_message_limit, verify_personality_access
+from app.core.dependencies import get_current_active_user, check_message_limit
 from app.core.exceptions import ConversationNotFound, UnauthorizedAccess, MessageLimitExceeded
 from app.services.claude import ClaudeService
 from app.services.groq_service import GroqService
 from app.services.memory_service import MemoryService
+from app.prompts.discovery_mode import DISCOVERY_MODE_ID, DISCOVERY_MODE_SIGNUP_BRIDGE_MESSAGE
 from app.services.depth_scorer import DepthScorer
 from app.services.depth_engine import ConversationDepthEngine
 from app.config import settings
@@ -84,6 +86,61 @@ router = APIRouter()
 # Initialize depth scorer
 depth_scorer = DepthScorer()
 
+MAX_DISCOVERY_METADATA_CHARS = 256
+NAME_EXTRACTION_REGEX = re.compile(
+    r"(?:my name is|i am|i'm|this is|call me)\s+([A-Za-z][A-Za-z'\-]*(?:\s+[A-Za-z][A-Za-z'\-]*)*)",
+    re.IGNORECASE
+)
+INTENT_EXTRACTION_REGEX = re.compile(
+    r"(?:here to|i'm here to|i came to|i'm looking to|i want to|i need to|i need help with|i want help with|i'm hoping to|i want to talk about|i'm reaching out because|i've come to)\s+(.+?)(?:[.!?]|$)",
+    re.IGNORECASE
+)
+
+def _sanitize_discovery_value(value: str) -> str:
+    """Keep discovery metadata compact so it stays within our limited disk budget."""
+    trimmed = value.strip()
+    if len(trimmed) <= MAX_DISCOVERY_METADATA_CHARS:
+        return trimmed
+    shortened = trimmed[:MAX_DISCOVERY_METADATA_CHARS - 3].rstrip()
+    logger.debug("Truncating discovery metadata to %d chars", MAX_DISCOVERY_METADATA_CHARS)
+    return f"{shortened}..."
+
+
+def _capture_discovery_metadata(message: str) -> Dict[str, Optional[str]]:
+    metadata = {"captured_name": None, "captured_intent": None}
+
+    name_match = NAME_EXTRACTION_REGEX.search(message)
+    if name_match:
+        metadata["captured_name"] = _sanitize_discovery_value(name_match.group(1))
+
+    intent_match = INTENT_EXTRACTION_REGEX.search(message)
+    if intent_match:
+        intent_text = intent_match.group(1).strip().rstrip(".!?")
+        if intent_text:
+            metadata["captured_intent"] = _sanitize_discovery_value(intent_text)
+
+    return metadata
+
+
+def _build_discovery_context(
+    metadata: Dict[str, Optional[str]],
+    trigger_signup_bridge: bool
+) -> Optional[str]:
+    lines = []
+    if metadata.get("captured_name"):
+        lines.append(f"Captured Name: {metadata['captured_name']}")
+    if metadata.get("captured_intent"):
+        lines.append(f"Captured Intent: {metadata['captured_intent']}")
+    if trigger_signup_bridge:
+        lines.append(
+            f"Action: Deliver the Signup Bridge message immediately to stop extra API usage: {DISCOVERY_MODE_SIGNUP_BRIDGE_MESSAGE}"
+        )
+
+    if not lines:
+        return None
+
+    return f"<discovery_context>\n" + "\n".join(lines) + "\n</discovery_context>"
+
 
 @router.post("/message", response_model=ChatResponse)
 async def send_message(
@@ -106,12 +163,25 @@ async def send_message(
     if not check_message_limit(current_user, db):
         raise MessageLimitExceeded()
     
-    # Check personality access
-    if chat_request.mode not in current_user.subscribed_personalities:
+    mode = (chat_request.mode or "").strip()
+    if not mode:
+        mode = DISCOVERY_MODE_ID
+    chat_request.mode = mode
+    discovery_mode_requested = mode == DISCOVERY_MODE_ID
+
+    # Check personality access (discovery mode is always available)
+    if not discovery_mode_requested and mode not in current_user.subscribed_personalities:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You are not subscribed to this personality."
         )
+
+    discovery_metadata = {"captured_name": None, "captured_intent": None}
+    discovery_context_block = None
+    if discovery_mode_requested:
+        discovery_metadata = _capture_discovery_metadata(chat_request.message)
+        trigger_signup = bool(discovery_metadata["captured_name"] and discovery_metadata["captured_intent"])
+        discovery_context_block = _build_discovery_context(discovery_metadata, trigger_signup)
     
     # Get or create conversation
     if chat_request.conversation_id:
@@ -347,6 +417,12 @@ async def send_message(
                 combined_memory_context = f"{combined_memory_context}\n\n{safety_context}"
             else:
                 combined_memory_context = safety_context
+
+        if discovery_context_block:
+            if combined_memory_context:
+                combined_memory_context = f"{combined_memory_context}\n\n{discovery_context_block}"
+            else:
+                combined_memory_context = discovery_context_block
 
         
         # PHASE 2: Parse user message for core variable information
@@ -670,6 +746,11 @@ async def send_message(
             except Exception as e:
                 logger.error(f"Phase 2B accountability prompt enhancement error: {e}", exc_info=True)
         
+        metadata_response = None
+        if discovery_mode_requested:
+            captured_fields = {k: v for k, v in discovery_metadata.items() if v}
+            metadata_response = captured_fields if captured_fields else None
+
         return ChatResponse(
             message_id=ai_message.id,
             conversation_id=conversation.id,
@@ -678,7 +759,8 @@ async def send_message(
             created_at=ai_message.created_at,
             tokens_used=int(ai_message.tokens_used) if ai_message.tokens_used else None,
             response_time_ms=response_time_ms,
-            depth=new_depth if depth_enabled else None
+            depth=new_depth if depth_enabled else None,
+            metadata=metadata_response
         )
         
     except Exception as e:

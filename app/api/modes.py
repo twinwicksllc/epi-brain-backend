@@ -12,6 +12,13 @@ router = APIRouter()
 
 # Available personality modes
 AVAILABLE_MODES = {
+    "discovery_mode": {
+        "name": "Discovery Mode",
+        "icon": "🧭",
+        "description": "Lead Discovery Agent that follows NEBP flow and routes new users to the right next step.",
+        "tier_required": "free",
+        "color": "#F97316"
+    },
     "personal_friend": {
         "name": "Personal Friend",
         "icon": "💙",

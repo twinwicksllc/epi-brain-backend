@@ -75,6 +75,7 @@ class Settings(BaseSettings):
         "business_mentor": "gpt-oss-20b",
         "weight_loss_coach": "gpt-oss-20b",
         "kids_learning": "llama-3.1-8b-instant",
+        "discovery_mode": "gpt-oss-20b",
     }
     
     # Paid Tier Model Mappings
@@ -88,6 +89,7 @@ class Settings(BaseSettings):
         "weight_loss_coach": "llama-3.3-70b-versatile",
         "customer_service": "gpt-oss-20b",
         "kids_learning": "llama-3.1-8b-instant",
+        "discovery_mode": "llama-3.3-70b-versatile",
     }
     
     # OpenAI (for TTS)
@@ -112,6 +114,9 @@ class Settings(BaseSettings):
     
     # Admin API
     ADMIN_API_KEY: str = os.getenv("ADMIN_API_KEY", "")
+
+    # Master API Key (Mobile MVP REST endpoint)
+    BOSS_API_KEY: str = os.getenv("BOSS_API_KEY", "")
     
     # Depth Tracking
     DEPTH_ENABLED: bool = True

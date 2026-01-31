@@ -3,11 +3,12 @@ Message Schemas
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, Dict
 from datetime import datetime
 from uuid import UUID
 
 from app.models.message import MessageRole
+from app.prompts.discovery_mode import DISCOVERY_MODE_ID
 
 
 class MessageBase(BaseModel):
@@ -36,7 +37,7 @@ class ChatRequest(BaseModel):
     """Schema for chat request"""
     message: str = Field(..., min_length=1, max_length=10000)
     conversation_id: Optional[UUID] = None
-    mode: str = Field(default="personal_friend", description="Personality mode")
+    mode: str = Field(default=DISCOVERY_MODE_ID, description="Personality mode")
     stream: bool = Field(default=False, description="Enable streaming response")
 
 
@@ -50,3 +51,4 @@ class ChatResponse(BaseModel):
     tokens_used: Optional[int] = None
     response_time_ms: Optional[int] = None
     depth: Optional[float] = None  # Current conversation depth (0.0-1.0)
+    metadata: Optional[Dict[str, str]] = None

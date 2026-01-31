@@ -40,12 +40,17 @@ is_production = (
     "render" in str(settings.DATABASE_URL).lower()
 )
 
+# Determine allowed origins
 if is_production:
     # Production: Only allow specific frontend domains
     allowed_origins = [
         "https://epibraingenius.com",
         "https://www.epibraingenius.com",
     ]
+    # Allow CORS_ORIGINS env var to override
+    if settings.CORS_ORIGINS and settings.CORS_ORIGINS != "*":
+        allowed_origins = settings.cors_origins_list
+    
     # Explicitly allow common headers including Authorization
     allowed_headers = [
         "Accept",
@@ -57,20 +62,23 @@ if is_production:
         "Referer",
         "User-Agent",
     ]
+    allow_credentials_value = True
     print(f"🌐 CORS: Production mode detected - allowing origins: {allowed_origins}")
 else:
     # Development: Allow all origins for testing
     allowed_origins = ["*"]
     print(f"🔧 CORS: Development mode - allowing all origins")
     allowed_headers = ["*"]
+    allow_credentials_value = False
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_credentials=allow_credentials_value,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=allowed_headers,
     expose_headers=["*"],
+    max_age=3600,  # Cache preflight for 1 hour
 )
 
 # Add debug middleware to check CORS headers

@@ -60,7 +60,7 @@ class User(Base):
     global_memory = Column(JSON, default={}, nullable=False)  # Persistent cross-session memory
     
     # Subscription tracking
-    subscribed_personalities = Column(JSON, default=["personal_friend"], nullable=False)
+    subscribed_personalities = Column(JSON, default=["personal_friend", "discovery_mode"], nullable=False)
     
     # Accountability preferences
     accountability_style = Column(String(50), default="adaptive", nullable=False)  # tactical, grace, analyst, adaptive

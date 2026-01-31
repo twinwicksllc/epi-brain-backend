@@ -49,7 +49,7 @@ class UserResponse(UserBase):
     last_login: Optional[datetime]
     global_memory: dict = {}  # Phase 1: Global memory
     is_admin: str = "false"  # Admin flag
-    subscribed_personalities: List[str] = ["personal_friend"]  # Subscription tracking
+    subscribed_personalities: List[str] = ["personal_friend", "discovery_mode"]  # Subscription tracking
     accountability_style: Optional[str] = None  # Phase 3: Accountability style
     sentiment_override_enabled: bool = False  # Phase 3: Allow AI to adjust based on mood
     depth_sensitivity_enabled: bool = False  # Phase 3: Allow tone adjustment based on depth

@@ -10,6 +10,7 @@ import logging
 
 from app.config import settings
 from app.models.message import Message
+from app.prompts.discovery_mode import DISCOVERY_MODE_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +127,9 @@ Memory: Session-only.
 Logic: Never flag repetition unless identical.
 Tone: High-energy, motivational, and health-focused.
 RESPONSE STYLE: Be concise and motivating. Keep fitness advice brief, actionable, and high-energy."""
+            "discovery_mode": DISCOVERY_MODE_PROMPT
         }
+
         
         return prompts.get(mode, prompts["personal_friend"])
     
