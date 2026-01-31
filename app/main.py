@@ -162,6 +162,23 @@ async def startup_event():
     logger.info(f"Environment: {settings.ENVIRONMENT}")
     logger.info(f"Debug mode: {settings.DEBUG}")
     
+    # Start rate limiter cleanup task
+    import asyncio
+    from app.core.rate_limiter import clean_expired_entries
+    
+    async def rate_limiter_cleanup_task():
+        """Periodic cleanup of expired rate limit entries"""
+        while True:
+            await asyncio.sleep(3600)  # Run every hour
+            try:
+                clean_expired_entries()
+            except Exception as e:
+                logger.error(f"Error in rate limiter cleanup: {e}")
+    
+    # Start cleanup task in background
+    asyncio.create_task(rate_limiter_cleanup_task())
+    logger.info("✅ Started rate limiter cleanup task")
+    
     # Run database migrations
     try:
         with engine.connect() as conn:

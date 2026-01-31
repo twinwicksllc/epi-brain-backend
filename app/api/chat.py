@@ -2,7 +2,7 @@
 Chat API Endpoints
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import List, AsyncGenerator, Dict, Optional
@@ -19,10 +19,11 @@ from app.schemas.conversation import ConversationResponse, ConversationCreate, C
 from app.schemas.message import ChatRequest, ChatResponse, MessageResponse
 from app.core.dependencies import get_current_active_user, check_message_limit
 from app.core.exceptions import ConversationNotFound, UnauthorizedAccess, MessageLimitExceeded
+from app.core.rate_limiter import check_rate_limit, get_rate_limit_info
 from app.services.claude import ClaudeService
 from app.services.groq_service import GroqService
 from app.services.memory_service import MemoryService
-from app.prompts.discovery_mode import DISCOVERY_MODE_ID, DISCOVERY_MODE_SIGNUP_BRIDGE_MESSAGE
+from app.prompts.discovery_mode import DISCOVERY_MODE_ID
 from app.services.depth_scorer import DepthScorer
 from app.services.depth_engine import ConversationDepthEngine
 from app.config import settings
@@ -88,11 +89,11 @@ depth_scorer = DepthScorer()
 
 MAX_DISCOVERY_METADATA_CHARS = 256
 NAME_EXTRACTION_REGEX = re.compile(
-    r"(?:my name is|i am|i'm|this is|call me)\s+([A-Za-z][A-Za-z'\-]*(?:\s+[A-Za-z][A-Za-z'\-]*)*)",
+    r"(?:my name is|i am called|call me|this is|name is|name's)\s+([A-Za-z][A-Za-z'\-]*(?:\s+[A-Za-z][A-Za-z'\-]*){0,2})(?:\s|[.,!?]|$)",
     re.IGNORECASE
 )
 INTENT_EXTRACTION_REGEX = re.compile(
-    r"(?:here to|i'm here to|i came to|i'm looking to|i want to|i need to|i need help with|i want help with|i'm hoping to|i want to talk about|i'm reaching out because|i've come to)\s+(.+?)(?:[.!?]|$)",
+    r"(?:here (?:to|for|because)|i'm here (?:to|for|because)|i came (?:to|for|because)|i'm looking (?:to|for)|i want (?:to|help with)|i need (?:to|help with)|looking for help with|need help with|want help with|hoping to|want to talk about|talk about|reaching out (?:to|because|for)|i've come to|help me with|struggling with|dealing with|working on|interested in)\s+(.+?)(?:[.!?]|$)",
     re.IGNORECASE
 )
 
@@ -128,12 +129,17 @@ def _build_discovery_context(
 ) -> Optional[str]:
     lines = []
     if metadata.get("captured_name"):
-        lines.append(f"Captured Name: {metadata['captured_name']}")
+        lines.append(f"✓ Name Captured: {metadata['captured_name']}")
     if metadata.get("captured_intent"):
-        lines.append(f"Captured Intent: {metadata['captured_intent']}")
+        lines.append(f"✓ Intent Captured: {metadata['captured_intent']}")
     if trigger_signup_bridge:
+        from app.prompts.discovery_mode import DISCOVERY_MODE_SIGNUP_BRIDGE_TEMPLATE
+        bridge_msg = DISCOVERY_MODE_SIGNUP_BRIDGE_TEMPLATE.format(
+            name=metadata.get("captured_name", "there"),
+            intent=metadata.get("captured_intent", "this")
+        )
         lines.append(
-            f"Action: Deliver the Signup Bridge message immediately to stop extra API usage: {DISCOVERY_MODE_SIGNUP_BRIDGE_MESSAGE}"
+            f"\n🎯 CRITICAL: Both pieces captured! Deliver this EXACT message NOW to trigger signup:\n\n{bridge_msg}\n\nDo NOT ask more questions. Stop here."
         )
 
     if not lines:
@@ -145,6 +151,7 @@ def _build_discovery_context(
 @router.post("/message", response_model=ChatResponse)
 async def send_message(
     chat_request: ChatRequest,
+    request: Request,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -153,6 +160,7 @@ async def send_message(
     
     Args:
         chat_request: Chat request with message and optional conversation_id
+        request: FastAPI request object (for IP rate limiting)
         current_user: Current authenticated user
         db: Database session
         
@@ -168,6 +176,36 @@ async def send_message(
         mode = DISCOVERY_MODE_ID
     chat_request.mode = mode
     discovery_mode_requested = mode == DISCOVERY_MODE_ID
+
+    # IP-based rate limiting for discovery mode (unauthenticated sessions)
+    if discovery_mode_requested:
+        # Get client IP from request
+        client_ip = request.client.host if request.client else "unknown"
+        
+        # Check if forwarded (behind proxy/load balancer)
+        forwarded_for = request.headers.get("X-Forwarded-For")
+        if forwarded_for:
+            client_ip = forwarded_for.split(",")[0].strip()
+        
+        # Apply rate limit
+        is_allowed, remaining = check_rate_limit(client_ip)
+        
+        if not is_allowed:
+            rate_info = get_rate_limit_info(client_ip)
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail={
+                    "error": "Rate limit exceeded",
+                    "message": "You've reached the maximum number of discovery messages. Please create a free account to continue.",
+                    "limit": rate_info["limit"],
+                    "window_hours": rate_info["window_hours"],
+                    "seconds_until_reset": rate_info["seconds_until_reset"],
+                    "reset_at": rate_info["reset_at"]
+                }
+            )
+        
+        # Log rate limit info
+        logger.info(f"Discovery mode rate limit check for IP {client_ip}: {remaining} messages remaining")
 
     # Check personality access (discovery mode is always available)
     if not discovery_mode_requested and mode not in current_user.subscribed_personalities:
