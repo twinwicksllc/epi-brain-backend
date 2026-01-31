@@ -88,12 +88,18 @@ router = APIRouter()
 depth_scorer = DepthScorer()
 
 MAX_DISCOVERY_METADATA_CHARS = 256
+MAX_DISCOVERY_STRIKES = 3
+DISCOVERY_FAILSAFE_MESSAGE = (
+    "I'd love to help you with that! To unlock my full capabilities and move beyond "
+    "our initial discovery, let's get your account set up first."
+)
+
 NAME_EXTRACTION_REGEX = re.compile(
-    r"(?:my name is|i am called|call me|this is|name is|name's)\s+([A-Za-z][A-Za-z'\-]*(?:\s+[A-Za-z][A-Za-z'\-]*){0,2})(?:\s|[.,!?]|$)",
+    r"(?:my name is|i am called|call me|this is|name is|name's|i'm)\s+([A-Z][A-Za-z'\-]*(?:\s+[A-Z][A-Za-z'\-]*){0,2})(?:\s|[.,!?]|$)",
     re.IGNORECASE
 )
 INTENT_EXTRACTION_REGEX = re.compile(
-    r"(?:here (?:to|for|because)|i'm here (?:to|for|because)|i came (?:to|for|because)|i'm looking (?:to|for)|i want (?:to|help with)|i need (?:to|help with)|looking for help with|need help with|want help with|hoping to|want to talk about|talk about|reaching out (?:to|because|for)|i've come to|help me with|struggling with|dealing with|working on|interested in)\s+(.+?)(?:[.!?]|$)",
+    r"(?:here (?:to|for|because)|i'm here (?:to|for|because)|i came (?:to|for|because)|i'm looking (?:to|for)|i want (?:to|help with)|i need (?:to|help with)|looking for help with|need help with|want help with|hoping to|want to talk about|talk about|reaching out (?:to|because|for)|i've come to|struggling with|dealing with|working on|interested in)\s+(.+?)(?:[.!?]|$)",
     re.IGNORECASE
 )
 
@@ -121,6 +127,51 @@ def _capture_discovery_metadata(message: str) -> Dict[str, Optional[str]]:
             metadata["captured_intent"] = _sanitize_discovery_value(intent_text)
 
     return metadata
+
+
+def _check_discovery_engagement(metadata: Dict[str, Optional[str]]) -> bool:
+    """
+    Check if user engaged with discovery prompt by providing name or intent.
+    
+    Args:
+        metadata: Dictionary with captured_name and captured_intent
+        
+    Returns:
+        True if user provided name or intent, False otherwise
+    """
+    return bool(metadata.get("captured_name") or metadata.get("captured_intent"))
+
+
+def _get_non_engagement_count(conversation: Conversation) -> int:
+    """Get the non-engagement strike count from conversation session memory."""
+    return conversation.session_memory.get("non_engagement_count", 0)
+
+
+def _increment_non_engagement_count(conversation: Conversation, db: Session) -> int:
+    """Increment and return the non-engagement strike count."""
+    current_count = _get_non_engagement_count(conversation)
+    new_count = current_count + 1
+    
+    if not conversation.session_memory:
+        conversation.session_memory = {}
+    
+    conversation.session_memory["non_engagement_count"] = new_count
+    db.flush()
+    
+    logger.warning(
+        f"Discovery non-engagement strike {new_count}/{MAX_DISCOVERY_STRIKES} "
+        f"for conversation {conversation.id}"
+    )
+    
+    return new_count
+
+
+def _reset_non_engagement_count(conversation: Conversation, db: Session):
+    """Reset the non-engagement strike count when user engages."""
+    if conversation.session_memory and "non_engagement_count" in conversation.session_memory:
+        conversation.session_memory["non_engagement_count"] = 0
+        db.flush()
+        logger.info(f"Discovery engagement detected, reset strike count for conversation {conversation.id}")
 
 
 def _build_discovery_context(
@@ -216,6 +267,8 @@ async def send_message(
 
     discovery_metadata = {"captured_name": None, "captured_intent": None}
     discovery_context_block = None
+    discovery_failsafe_triggered = False
+    
     if discovery_mode_requested:
         discovery_metadata = _capture_discovery_metadata(chat_request.message)
         trigger_signup = bool(discovery_metadata["captured_name"] and discovery_metadata["captured_intent"])
@@ -240,6 +293,26 @@ async def send_message(
         db.add(conversation)
         db.flush()
     
+    # DISCOVERY FAILSAFE: Check engagement and strike counter
+    if discovery_mode_requested:
+        user_engaged = _check_discovery_engagement(discovery_metadata)
+        current_strikes = _get_non_engagement_count(conversation)
+        
+        if user_engaged:
+            # User provided name or intent, reset counter
+            _reset_non_engagement_count(conversation, db)
+        else:
+            # User ignored discovery prompt, increment strike counter
+            new_strikes = _increment_non_engagement_count(conversation, db)
+            
+            # Check if failsafe threshold reached
+            if new_strikes >= MAX_DISCOVERY_STRIKES:
+                discovery_failsafe_triggered = True
+                logger.warning(
+                    f"Discovery failsafe triggered for conversation {conversation.id} "
+                    f"after {new_strikes} non-engagement strikes"
+                )
+    
     # Save user message
     user_message = Message(
         conversation_id=conversation.id,
@@ -248,6 +321,36 @@ async def send_message(
     )
     db.add(user_message)
     db.flush()
+    
+    # DISCOVERY FAILSAFE: Return hardcoded response if failsafe triggered
+    if discovery_failsafe_triggered:
+        # Create failsafe response message
+        failsafe_message = Message(
+            conversation_id=conversation.id,
+            role=MessageRole.ASSISTANT,
+            content=DISCOVERY_FAILSAFE_MESSAGE,
+            tokens_used="0",
+            response_time_ms="0"
+        )
+        db.add(failsafe_message)
+        db.commit()
+        db.refresh(failsafe_message)
+        
+        # Return response with failsafe flag
+        return ChatResponse(
+            message_id=failsafe_message.id,
+            conversation_id=conversation.id,
+            content=DISCOVERY_FAILSAFE_MESSAGE,
+            mode=conversation.mode,
+            created_at=failsafe_message.created_at,
+            tokens_used=0,
+            response_time_ms=0,
+            depth=None,
+            metadata={
+                "failsafe_triggered": "true",
+                "non_engagement_strikes": str(current_strikes + 1)
+            }
+        )
     
     # PHASE 4: SAFETY CHECKS (Psychology Expert Mode)
     safety_context = ""
