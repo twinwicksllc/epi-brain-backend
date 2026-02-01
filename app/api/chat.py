@@ -5,7 +5,7 @@ Chat API Endpoints
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from typing import List, AsyncGenerator, Dict, Optional
+from typing import List, AsyncGenerator, Dict, Optional, Tuple
 from uuid import UUID
 from datetime import datetime
 import json
@@ -82,13 +82,26 @@ except ImportError as e:
     logger.warning(f"Phase 4 CBT and safety services not available: {e}")
     PHASE_4_AVAILABLE = False
 
+# Discovery Mode extraction service (wrapped in try/except for safety)
+try:
+    from app.services.discovery_extraction_service import DiscoveryExtractionService
+    DISCOVERY_EXTRACTION_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Discovery extraction service not available: {e}")
+    DISCOVERY_EXTRACTION_AVAILABLE = False
+
 router = APIRouter()
 
 # Initialize depth scorer
 depth_scorer = DepthScorer()
 
 MAX_DISCOVERY_METADATA_CHARS = 256
-MAX_DISCOVERY_STRIKES = 3
+
+# Refined strike counter configuration
+# - HONEST_ATTEMPT_STRIKES: More lenient for users genuinely trying (5 strikes allowed)
+# - NON_ENGAGEMENT_STRIKES: Stricter for clear non-engagement (3 strikes triggers failsafe)
+MAX_HONEST_ATTEMPT_STRIKES = 5  # User is trying but struggling
+MAX_NON_ENGAGEMENT_STRIKES = 3   # User is clearly wasting time
 DISCOVERY_FAILSAFE_MESSAGE = (
     "I'd love to help you with that! To unlock my full capabilities and move beyond "
     "our initial discovery, let's get your account set up first."
@@ -97,6 +110,13 @@ DISCOVERY_FAILSAFE_MESSAGE = (
 # Name validation constraints
 MAX_NAME_LENGTH = 40
 MAX_NAME_WORD_COUNT = 4
+
+# Track engagement quality weights
+STRIKE_WEIGHTS = {
+    "honest_attempt": 1,      # Playful but genuine, or struggling
+    "dismissive": 2,          # Dismissive but could recover
+    "clear_non_engagement": 3 # Clearly wasting time or spam
+}
 
 def _validate_extracted_name(name: str) -> bool:
     """
@@ -181,34 +201,91 @@ def _check_discovery_engagement(metadata: Dict[str, Optional[str]]) -> bool:
 
 def _get_non_engagement_count(conversation: Conversation) -> int:
     """Get the non-engagement strike count from conversation session memory."""
-    return conversation.session_memory.get("non_engagement_count", 0)
+    if not conversation.session_memory:
+        return 0
+    return conversation.session_memory.get("non_engagement_strikes", 0)
 
 
-def _increment_non_engagement_count(conversation: Conversation, db: Session) -> int:
-    """Increment and return the non-engagement strike count."""
-    current_count = _get_non_engagement_count(conversation)
-    new_count = current_count + 1
+def _get_honest_attempt_count(conversation: Conversation) -> int:
+    """Get the honest attempt strike count (more lenient)."""
+    if not conversation.session_memory:
+        return 0
+    return conversation.session_memory.get("honest_attempt_strikes", 0)
+
+
+def _increment_strike_count(
+    conversation: Conversation,
+    db: Session,
+    strike_weight: int = 1,
+    is_honest_attempt: bool = False
+) -> Tuple[int, int]:
+    """
+    Increment strike count based on engagement quality.
     
+    Args:
+        conversation: Conversation object
+        db: Database session
+        strike_weight: Weight of this strike (1-3)
+        is_honest_attempt: True if user is genuinely trying
+        
+    Returns:
+        Tuple of (total_non_engagement_strikes, total_honest_attempt_strikes)
+    """
     if not conversation.session_memory:
         conversation.session_memory = {}
     
-    conversation.session_memory["non_engagement_count"] = new_count
-    db.flush()
-    
-    logger.warning(
-        f"Discovery non-engagement strike {new_count}/{MAX_DISCOVERY_STRIKES} "
-        f"for conversation {conversation.id}"
-    )
-    
-    return new_count
-
-
-def _reset_non_engagement_count(conversation: Conversation, db: Session):
-    """Reset the non-engagement strike count when user engages."""
-    if conversation.session_memory and "non_engagement_count" in conversation.session_memory:
-        conversation.session_memory["non_engagement_count"] = 0
+    if is_honest_attempt:
+        # User is trying but struggling - use lenient counter
+        current_count = conversation.session_memory.get("honest_attempt_strikes", 0)
+        new_count = current_count + 1
+        conversation.session_memory["honest_attempt_strikes"] = new_count
+        logger.info(
+            f"Honest attempt strike {new_count}/{MAX_HONEST_ATTEMPT_STRIKES} "
+            f"(weight={strike_weight}) for conversation {conversation.id}"
+        )
         db.flush()
-        logger.info(f"Discovery engagement detected, reset strike count for conversation {conversation.id}")
+        non_engagement_strikes = conversation.session_memory.get("non_engagement_strikes", 0)
+        return non_engagement_strikes, new_count
+    else:
+        # User is not engaging - use strict counter
+        current_count = conversation.session_memory.get("non_engagement_strikes", 0)
+        new_count = current_count + strike_weight  # Weight can be 1-3
+        conversation.session_memory["non_engagement_strikes"] = new_count
+        logger.warning(
+            f"Non-engagement strike +{strike_weight} (now {new_count}/{MAX_NON_ENGAGEMENT_STRIKES}) "
+            f"for conversation {conversation.id}"
+        )
+        db.flush()
+        honest_strikes = conversation.session_memory.get("honest_attempt_strikes", 0)
+        return new_count, honest_strikes
+
+
+def _should_trigger_failsafe(
+    non_engagement_strikes: int,
+    honest_attempt_strikes: int
+) -> bool:
+    """
+    Determine if failsafe should trigger based on strike counts.
+    
+    Strategy:
+    - Non-engagement strikes are weighted more heavily
+    - Honest attempts get more chances
+    """
+    # Trigger if clear non-engagement threshold reached
+    if non_engagement_strikes >= MAX_NON_ENGAGEMENT_STRIKES:
+        return True
+    
+    # Don't trigger if user is genuinely trying
+    return False
+
+
+def _reset_strike_counts(conversation: Conversation, db: Session):
+    """Reset strike counts when user shows engagement."""
+    if conversation.session_memory:
+        conversation.session_memory["non_engagement_strikes"] = 0
+        conversation.session_memory["honest_attempt_strikes"] = 0
+        db.flush()
+        logger.info(f"Reset all strike counts for conversation {conversation.id}")
 
 
 def _get_invalid_name_count(conversation: Conversation) -> int:
@@ -239,19 +316,46 @@ def _increment_invalid_name_count(conversation: Conversation, db: Session) -> in
 def _build_discovery_context(
     metadata: Dict[str, Optional[str]],
     trigger_signup_bridge: bool,
-    invalid_name_format: bool = False
+    invalid_name_format: bool = False,
+    non_engagement_strikes: int = 0,
+    is_honest_attempt: bool = False
 ) -> Optional[str]:
+    """
+    Build context instructions for the LLM in Discovery Mode.
+    
+    This function provides the LLM with information about:
+    - What data has been captured
+    - Whether verification is needed
+    - What to do if both pieces are captured
+    - How to handle non-engagement
+    
+    Args:
+        metadata: Captured name and intent
+        trigger_signup_bridge: Whether to show signup message
+        invalid_name_format: Whether user provided sentence instead of name
+        non_engagement_strikes: Current non-engagement strike count
+        is_honest_attempt: Whether user is genuinely trying
+    """
     lines = []
+    
+    # Report captured data
     if metadata.get("captured_name"):
         lines.append(f"✓ Name Captured: {metadata['captured_name']}")
+        lines.append("→ Next step: Verify the name, then ask about intent")
+    
     if metadata.get("captured_intent"):
         lines.append(f"✓ Intent Captured: {metadata['captured_intent']}")
+    
+    # Handle invalid name format
     if invalid_name_format:
         lines.append(
-            "⚠️ INVALID NAME FORMAT DETECTED: User provided a sentence/long text instead of a name.\n"
-            "Do NOT move to intent question. Instead, politely clarify:\n"
-            "'That sounds like an interesting story, but I didn't quite catch your name! What should I call you?'"
+            "⚠️ INVALID NAME FORMAT: User provided a sentence or long text, not a name.\n"
+            "→ Action: Politely clarify without moving to intent question.\n"
+            "→ Example: 'That sounds interesting, but I'd love to know what to actually call you. What's your name?'\n"
+            "→ Do NOT ask about their intent until you have a proper name."
         )
+    
+    # Handle signup bridge (both name and intent captured)
     if trigger_signup_bridge:
         from app.prompts.discovery_mode import DISCOVERY_MODE_SIGNUP_BRIDGE_TEMPLATE
         bridge_msg = DISCOVERY_MODE_SIGNUP_BRIDGE_TEMPLATE.format(
@@ -259,8 +363,34 @@ def _build_discovery_context(
             intent=metadata.get("captured_intent", "this")
         )
         lines.append(
-            f"\n🎯 CRITICAL: Both pieces captured! Deliver this EXACT message NOW to trigger signup:\n\n{bridge_msg}\n\nDo NOT ask more questions. Stop here."
+            f"🎯 CRITICAL: Both name and intent captured!\n"
+            f"→ Action: Deliver signup bridge message now (no more questions):\n\n{bridge_msg}"
         )
+    
+    # Handle non-engagement situation
+    if non_engagement_strikes > 0:
+        if is_honest_attempt:
+            lines.append(
+                f"ℹ️  User is genuinely trying but struggling ({non_engagement_strikes} honest attempt strikes).\n"
+                f"→ Action: Be extra patient and supportive. They have room to recover."
+            )
+        else:
+            if non_engagement_strikes >= MAX_NON_ENGAGEMENT_STRIKES:
+                lines.append(
+                    f"⛔ USER DISENGAGEMENT THRESHOLD REACHED ({non_engagement_strikes}/{MAX_NON_ENGAGEMENT_STRIKES} strikes).\n"
+                    f"→ Action: Failsafe will be triggered. Stop using LLM calls. User should sign up for more."
+                )
+            else:
+                remaining = MAX_NON_ENGAGEMENT_STRIKES - non_engagement_strikes
+                lines.append(
+                    f"⚠️  User not engaging ({non_engagement_strikes}/{MAX_NON_ENGAGEMENT_STRIKES} strikes).\n"
+                    f"→ Action: {remaining} strike(s) remaining before failsafe triggers. Be direct but warm."
+                )
+    
+    if not lines:
+        return None
+
+    return f"<discovery_context>\n" + "\n".join(lines) + "\n</discovery_context>"
 
     if not lines:
         return None
@@ -370,45 +500,71 @@ async def send_message(
         db.add(conversation)
         db.flush()
     
-    # DISCOVERY FAILSAFE: Check engagement and strike counter
+    # DISCOVERY FAILSAFE: Check engagement and strike counter with refined logic
+    discovery_failsafe_triggered = False
+    non_engagement_strikes = 0
+    honest_attempt_strikes = 0
+    
     if discovery_mode_requested:
         user_engaged = _check_discovery_engagement(discovery_metadata)
         invalid_name_detected = discovery_metadata.get("invalid_name_format", False)
-        current_strikes = _get_non_engagement_count(conversation)
+        non_engagement_strikes = _get_non_engagement_count(conversation)
+        honest_attempt_strikes = _get_honest_attempt_count(conversation)
         
         if user_engaged:
-            # User provided valid name or intent, reset counters
-            _reset_non_engagement_count(conversation, db)
+            # User provided valid name or intent - reset strikes
+            _reset_strike_counts(conversation, db)
+            logger.info(f"User engagement detected, reset strike counts for conversation {conversation.id}")
         elif invalid_name_detected:
             # User provided invalid name format (sentence instead of name)
             invalid_name_count = _increment_invalid_name_count(conversation, db)
             
-            # On second invalid name, treat as non-engagement and increment strike counter
+            # Second invalid name treated as non-engagement strike
             if invalid_name_count >= 2:
-                new_strikes = _increment_non_engagement_count(conversation, db)
-                logger.warning(
-                    f"Second invalid name detected for conversation {conversation.id}, "
-                    f"incrementing strike counter to {new_strikes}"
+                non_engagement_strikes, honest_attempt_strikes = _increment_strike_count(
+                    conversation,
+                    db,
+                    strike_weight=1,
+                    is_honest_attempt=False
                 )
-                
-                # Check if failsafe threshold reached
-                if new_strikes >= MAX_DISCOVERY_STRIKES:
-                    discovery_failsafe_triggered = True
-                    logger.warning(
-                        f"Discovery failsafe triggered for conversation {conversation.id} "
-                        f"after {new_strikes} non-engagement strikes (including invalid names)"
-                    )
+                logger.warning(
+                    f"Second invalid name detected, incremented non-engagement strikes to {non_engagement_strikes}"
+                )
         else:
-            # User ignored discovery prompt entirely, increment strike counter
-            new_strikes = _increment_non_engagement_count(conversation, db)
+            # User ignored discovery prompt entirely
+            # Assess whether this is honest attempt or clear non-engagement
+            is_honest = (honest_attempt_strikes > 0) or (non_engagement_strikes == 0)
+            strike_weight = 1 if is_honest else 2  # Be stricter if pattern of non-engagement
             
-            # Check if failsafe threshold reached
-            if new_strikes >= MAX_DISCOVERY_STRIKES:
-                discovery_failsafe_triggered = True
-                logger.warning(
-                    f"Discovery failsafe triggered for conversation {conversation.id} "
-                    f"after {new_strikes} non-engagement strikes"
-                )
+            non_engagement_strikes, honest_attempt_strikes = _increment_strike_count(
+                conversation,
+                db,
+                strike_weight=strike_weight,
+                is_honest_attempt=is_honest
+            )
+            logger.info(
+                f"Non-engagement detected (honest={is_honest}, weight={strike_weight}), "
+                f"strikes now: non_engagement={non_engagement_strikes}, honest_attempt={honest_attempt_strikes}"
+            )
+        
+        # Check if failsafe should trigger
+        discovery_failsafe_triggered = _should_trigger_failsafe(non_engagement_strikes, honest_attempt_strikes)
+        
+        if discovery_failsafe_triggered:
+            logger.critical(
+                f"Discovery failsafe triggered for conversation {conversation.id}: "
+                f"non_engagement={non_engagement_strikes}/{MAX_NON_ENGAGEMENT_STRIKES}"
+            )
+        
+        # Build context for LLM with strike info
+        trigger_signup = bool(discovery_metadata["captured_name"] and discovery_metadata["captured_intent"])
+        discovery_context_block = _build_discovery_context(
+            discovery_metadata,
+            trigger_signup,
+            invalid_name_format=invalid_name_detected,
+            non_engagement_strikes=non_engagement_strikes,
+            is_honest_attempt=(honest_attempt_strikes > 0)
+        )
     
     # Save user message
     user_message = Message(
@@ -445,7 +601,8 @@ async def send_message(
             depth=None,
             metadata={
                 "failsafe_triggered": "true",
-                "non_engagement_strikes": str(current_strikes + 1)
+                "non_engagement_strikes": str(non_engagement_strikes),
+                "honest_attempt_strikes": str(honest_attempt_strikes)
             }
         )
     
