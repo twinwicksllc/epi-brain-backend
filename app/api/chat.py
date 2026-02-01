@@ -470,16 +470,6 @@ async def send_message(
     
     if discovery_mode_requested:
         discovery_metadata = _capture_discovery_metadata(chat_request.message)
-        
-        # Handle invalid name format
-        invalid_name_detected = discovery_metadata.get("invalid_name_format", False)
-        
-        trigger_signup = bool(discovery_metadata["captured_name"] and discovery_metadata["captured_intent"])
-        discovery_context_block = _build_discovery_context(
-            discovery_metadata, 
-            trigger_signup,
-            invalid_name_format=invalid_name_detected
-        )
     
     # Get or create conversation
     if chat_request.conversation_id:
