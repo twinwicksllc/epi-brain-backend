@@ -43,8 +43,8 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     """Schema for chat response"""
-    message_id: UUID
-    conversation_id: UUID
+    message_id: Optional[UUID] = None  # None for unauthenticated discovery mode
+    conversation_id: Optional[UUID] = None  # None for unauthenticated discovery mode
     content: str
     mode: str
     created_at: datetime

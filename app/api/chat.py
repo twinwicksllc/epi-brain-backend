@@ -992,45 +992,30 @@ async def send_message(
         # Exclude the last message (current user message) from history to avoid duplicate
         conversation_history = conversation.messages[:-1] if conversation and conversation.messages else []
         
-        ai_response = None
-        last_error = None
-        errors = []
-        
-        # Check if any API keys are configured
-        has_groq_key = bool(settings.GROQ_API_KEY)
-        has_claude_key = bool(settings.CLAUDE_API_KEY)
-        
-        if not has_groq_key and not has_claude_key:
-            error_msg = "No AI API keys configured. Please set GROQ_API_KEY or CLAUDE_API_KEY environment variables."
+        # Check if API key is configured
+        if not settings.GROQ_API_KEY:
+            error_msg = "GROQ_API_KEY not configured. Please set GROQ_API_KEY environment variable."
             logger.critical(error_msg)
             raise Exception(error_msg)
         
-        # Try primary service first, then fallback
-        for service_name, service_class in [('Groq', GroqService), ('Claude', ClaudeService)]:
-            try:
-                logger.info(f"Attempting to use {service_name} service...")
-                ai_service = service_class()
-                ai_response = await ai_service.get_response(
-                    message=chat_request.message,
-                    mode=chat_request.mode,
-                    conversation_history=conversation_history,
-                    user_tier=current_user.tier.value if current_user and hasattr(current_user, "tier") else None,
-                    memory_context=combined_memory_context,  # Pass combined memory context to AI service
-                    accountability_style=accountability_style,  # Phase 3: Pass accountability style
-                    conversation_depth=new_depth if new_depth else None  # Phase 3: Pass conversation depth
-                )
-                logger.info(f"Successfully got response from {service_name} service")
-                break  # Success, exit loop
-            except Exception as e:
-                last_error = e
-                errors.append(f"{service_name}: {str(e)}")
-                logger.error(f"{service_name} service failed: {e}")
-                # Try next service
+        # Use Groq service only (no fallback for now to simplify debugging)
+        logger.info("Using Groq service...")
+        ai_service = GroqService()
         
-        if ai_response is None:
-            error_detail = f"All AI services failed. Errors: {'; '.join(errors)}"
-            logger.critical(error_detail)
-            raise Exception(error_detail)
+        try:
+            ai_response = await ai_service.get_response(
+                message=chat_request.message,
+                mode=chat_request.mode,
+                conversation_history=conversation_history,
+                user_tier=current_user.tier.value if current_user and hasattr(current_user, "tier") else None,
+                memory_context=combined_memory_context,  # Pass combined memory context to AI service
+                accountability_style=accountability_style,  # Phase 3: Pass accountability style
+                conversation_depth=new_depth if new_depth else None  # Phase 3: Pass conversation depth
+            )
+            logger.info("Successfully got response from Groq service")
+        except Exception as e:
+            logger.error(f"Groq service failed: {e}", exc_info=True)
+            raise Exception(f"Groq service failed: {str(e)}")
         
         response_time_ms = int((datetime.utcnow() - start_time).total_seconds() * 1000)
         
@@ -1497,15 +1482,9 @@ async def stream_message(
                 except Exception as e:
                     logger.error(f"Phase 3 personality routing error in streaming: {e}", exc_info=True)
             
-            # Choose AI service based on configuration
-            use_groq = getattr(settings, 'USE_GROQ', True)  # Default to Groq if not set
-            
-            # Check if any API keys are configured
-            has_groq_key = bool(settings.GROQ_API_KEY)
-            has_claude_key = bool(settings.CLAUDE_API_KEY)
-            
-            if not has_groq_key and not has_claude_key:
-                error_msg = "No AI API keys configured. Please set GROQ_API_KEY or CLAUDE_API_KEY environment variables."
+            # Check if API key is configured
+            if not settings.GROQ_API_KEY:
+                error_msg = "GROQ_API_KEY not configured. Please set GROQ_API_KEY environment variable."
                 logger.critical(error_msg)
                 yield f"data: {json.dumps({'error': error_msg})}\n\n"
                 return
@@ -1514,35 +1493,23 @@ async def stream_message(
             # Exclude the last message (current user message) from history to avoid duplicate
             conversation_history = conversation.messages[:-1] if conversation.messages else []
             
-            response = None
-            last_error = None
-            errors = []
+            # Use Groq service only (no fallback for now to simplify debugging)
+            logger.info("Using Groq service for streaming...")
+            ai_service = GroqService()
             
-            # Try primary service first, then fallback
-            for service_name, service_class in [('Groq', GroqService), ('Claude', ClaudeService)]:
-                try:
-                    logger.info(f"Attempting to use {service_name} service for streaming...")
-                    ai_service = service_class()
-                    response = await ai_service.get_streaming_response(
-                        message=chat_request.message,
-                        mode=chat_request.mode,
-                        conversation_history=conversation_history,
-                        user_tier=current_user.tier.value if hasattr(current_user, "tier") else None,
-                        accountability_style=accountability_style,  # Phase 3: Pass accountability style
-                        conversation_depth=new_depth if new_depth else None  # Phase 3: Pass conversation depth
-                    )
-                    logger.info(f"Successfully got streaming response from {service_name} service")
-                    break  # Success, exit loop
-                except Exception as e:
-                    last_error = e
-                    errors.append(f"{service_name}: {str(e)}")
-                    logger.error(f"{service_name} streaming service failed: {e}")
-                    # Try next service
-            
-            if response is None:
-                error_detail = f"All AI streaming services failed. Errors: {'; '.join(errors)}"
-                logger.critical(error_detail)
-                yield f"data: {json.dumps({'error': error_detail})}\n\n"
+            try:
+                response = await ai_service.get_streaming_response(
+                    message=chat_request.message,
+                    mode=chat_request.mode,
+                    conversation_history=conversation_history,
+                    user_tier=current_user.tier.value if hasattr(current_user, "tier") else None,
+                    accountability_style=accountability_style,  # Phase 3: Pass accountability style
+                    conversation_depth=new_depth if new_depth else None  # Phase 3: Pass conversation depth
+                )
+                logger.info("Successfully got streaming response from Groq service")
+            except Exception as e:
+                logger.error(f"Groq streaming service failed: {e}", exc_info=True)
+                yield f"data: {json.dumps({'error': f'Groq service failed: {str(e)}'})}\n\n"
                 return
             
             # Stream the response
