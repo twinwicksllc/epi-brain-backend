@@ -425,6 +425,10 @@ async def send_message(
     # Accept both "discovery" and "discovery_mode" for discovery mode
     discovery_mode_requested = mode == DISCOVERY_MODE_ID or mode == "discovery"
     
+    # Normalize mode to "discovery_mode" for AI services
+    if mode == "discovery":
+        mode = DISCOVERY_MODE_ID
+    
     # For discovery mode, check if user is authenticated
     # If not authenticated, skip user-specific checks
     if not discovery_mode_requested:
