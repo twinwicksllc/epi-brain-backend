@@ -988,7 +988,7 @@ async def send_message(
         
         # Get AI response with combined memory context (existing + semantic)
         # Exclude the last message (current user message) from history to avoid duplicate
-        conversation_history = conversation.messages[:-1] if conversation.messages else []
+        conversation_history = conversation.messages[:-1] if conversation and conversation.messages else []
         ai_response = await ai_service.get_response(
             message=chat_request.message,
             mode=chat_request.mode,
@@ -1001,21 +1001,23 @@ async def send_message(
         
         response_time_ms = int((datetime.utcnow() - start_time).total_seconds() * 1000)
         
-        # Save AI message
-        ai_message = Message(
-            conversation_id=conversation.id,
-            role=MessageRole.ASSISTANT,
-            content=ai_response["content"],
-            tokens_used=str(ai_response.get("tokens_used", 0)),
-            response_time_ms=str(response_time_ms)
-        )
-        db.add(ai_message)
+        # Save AI message and update user count only for authenticated users
+        ai_message = None
+        if current_user and conversation:
+            ai_message = Message(
+                conversation_id=conversation.id,
+                role=MessageRole.ASSISTANT,
+                content=ai_response["content"],
+                tokens_used=str(ai_response.get("tokens_used", 0)),
+                response_time_ms=str(response_time_ms)
+            )
+            db.add(ai_message)
+            
+            # Update user message count
+            current_user.message_count = str(int(current_user.message_count) + 1)
         
-        # Update user message count
-        current_user.message_count = str(int(current_user.message_count) + 1)
-        
-        # PHASE 2: Active Memory Extraction (if enabled)
-        if PHASE_2_AVAILABLE and settings.MEMORY_ENABLED and settings.MEMORY_AUTO_EXTRACTION_ENABLED:
+        # PHASE 2: Active Memory Extraction (if enabled) - only for authenticated users
+        if current_user and conversation and PHASE_2_AVAILABLE and settings.MEMORY_ENABLED and settings.MEMORY_AUTO_EXTRACTION_ENABLED:
             try:
                 active_extractor = ActiveMemoryExtractor(memory_service, GroqService())
                 # Count messages BEFORE flush to avoid issues
@@ -1048,8 +1050,8 @@ async def send_message(
                 logger.error(f"Phase 2 active extraction error: {e}", exc_info=True)
                 # Don't fail the request if Phase 2 has issues
         
-        # PHASE 2A: SEMANTIC MEMORY EXTRACTION
-        if PHASE_2A_AVAILABLE and settings.SEMANTIC_MEMORY_ENABLED:
+        # PHASE 2A: SEMANTIC MEMORY EXTRACTION - only for authenticated users
+        if current_user and conversation and PHASE_2A_AVAILABLE and settings.SEMANTIC_MEMORY_ENABLED:
             try:
                 # Initialize OpenAI client for embeddings
                 openai_client = None
@@ -1087,8 +1089,8 @@ async def send_message(
                 logger.error(f"Phase 2A semantic memory extraction error: {e}", exc_info=True)
                 # Don't fail the request if semantic memory extraction fails
         
-        # PHASE 2B: GOAL EXTRACTION AND UPDATES
-        if PHASE_2B_AVAILABLE and settings.MEMORY_ENABLED:
+        # PHASE 2B: GOAL EXTRACTION AND UPDATES - only for authenticated users
+        if current_user and conversation and PHASE_2B_AVAILABLE and settings.MEMORY_ENABLED:
             try:
                 goal_service = GoalService(db)
                 habit_service = HabitService(db)
@@ -1138,12 +1140,14 @@ async def send_message(
                 logger.error(f"Phase 2B goal extraction error: {e}", exc_info=True)
                 # Don't fail the request if goal extraction fails
         
-        db.commit()
-        db.refresh(ai_message)
+        # Only commit to database if we saved messages (authenticated users)
+        if current_user and conversation and ai_message:
+            db.commit()
+            db.refresh(ai_message)
         
         # PHASE 2: Enhance response with collection prompt if needed
         # PHASE 2B: Add accountability prompt if needed
-        final_content = ai_message.content
+        final_content = ai_response["content"]  # Use the AI response directly
         
         # Add collection prompt (Phase 2)
         if collection_prompt and PHASE_2_AVAILABLE:
@@ -1164,17 +1168,33 @@ async def send_message(
             captured_fields = {k: v for k, v in discovery_metadata.items() if v}
             metadata_response = captured_fields if captured_fields else None
 
-        return ChatResponse(
-            message_id=ai_message.id,
-            conversation_id=conversation.id,
-            content=final_content,
-            mode=conversation.mode,
-            created_at=ai_message.created_at,
-            tokens_used=int(ai_message.tokens_used) if ai_message.tokens_used else None,
-            response_time_ms=response_time_ms,
-            depth=new_depth if depth_enabled else None,
-            metadata=metadata_response
-        )
+        # Return response - handle both authenticated and unauthenticated users
+        if current_user and conversation and ai_message:
+            # Authenticated user: return full response with database IDs
+            return ChatResponse(
+                message_id=ai_message.id,
+                conversation_id=conversation.id,
+                content=final_content,
+                mode=conversation.mode,
+                created_at=ai_message.created_at,
+                tokens_used=int(ai_message.tokens_used) if ai_message.tokens_used else None,
+                response_time_ms=response_time_ms,
+                depth=new_depth if depth_enabled else None,
+                metadata=metadata_response
+            )
+        else:
+            # Unauthenticated discovery mode: return simplified response
+            return ChatResponse(
+                message_id=None,  # No message saved
+                conversation_id=None,  # No conversation created
+                content=final_content,
+                mode=chat_request.mode,
+                created_at=datetime.utcnow(),  # Use current time
+                tokens_used=ai_response.get("tokens_used"),
+                response_time_ms=response_time_ms,
+                depth=new_depth if depth_enabled else None,
+                metadata=metadata_response
+            )
         
     except Exception as e:
         db.rollback()
