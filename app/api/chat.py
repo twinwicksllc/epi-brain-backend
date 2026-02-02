@@ -718,21 +718,23 @@ async def send_message(
     start_time = datetime.utcnow()
     
     try:
-        # MEMORY INJECTION: Load and inject user memory into AI context
-        memory_service = MemoryService(db)
-        memory_context = await memory_service.render_memory_for_prompt(
-            user_id=str(current_user.id),
-            conversation_id=str(conversation.id),
-            personality=chat_request.mode
-        )
-        if memory_context:
-            logger.info(f"Injecting memory context for user {current_user.id}:\n{memory_context}")
-        else:
-            logger.debug(f"No memory context available for user {current_user.id}")
+        # MEMORY INJECTION: Load and inject user memory into AI context (only for authenticated users)
+        memory_context = ""
+        if current_user and conversation:
+            memory_service = MemoryService(db)
+            memory_context = await memory_service.render_memory_for_prompt(
+                user_id=str(current_user.id),
+                conversation_id=str(conversation.id),
+                personality=chat_request.mode
+            )
+            if memory_context:
+                logger.info(f"Injecting memory context for user {current_user.id}:\n{memory_context}")
+            else:
+                logger.debug(f"No memory context available for user {current_user.id}")
         
         # PHASE 2A: SEMANTIC MEMORY RETRIEVAL
         semantic_memory_context = ""
-        if PHASE_2A_AVAILABLE and settings.SEMANTIC_MEMORY_ENABLED:
+        if current_user and conversation and PHASE_2A_AVAILABLE and settings.SEMANTIC_MEMORY_ENABLED:
             try:
                 # Initialize OpenAI client for embeddings
                 openai_client = None
@@ -772,7 +774,7 @@ async def send_message(
         
         # PHASE 2B: GOAL CONTEXT RETRIEVAL
         goal_context = ""
-        if PHASE_2B_AVAILABLE and settings.MEMORY_ENABLED:
+        if current_user and conversation and PHASE_2B_AVAILABLE and settings.MEMORY_ENABLED:
             try:
                 goal_service = GoalService(db)
                 habit_service = HabitService(db)
@@ -839,7 +841,7 @@ async def send_message(
 
         
         # PHASE 2: Parse user message for core variable information
-        if PHASE_2_AVAILABLE and settings.MEMORY_ENABLED:
+        if current_user and conversation and PHASE_2_AVAILABLE and settings.MEMORY_ENABLED:
             try:
                 response_parser = ResponseParser(memory_service)
                 extracted = await response_parser.parse_and_extract(
@@ -854,7 +856,7 @@ async def send_message(
         
         # PHASE 2: Core Variable Collection (if enabled)
         collection_prompt = None
-        if PHASE_2_AVAILABLE and settings.MEMORY_ENABLED and settings.MEMORY_CORE_COLLECTION_ENABLED:
+        if current_user and conversation and PHASE_2_AVAILABLE and settings.MEMORY_ENABLED and settings.MEMORY_CORE_COLLECTION_ENABLED:
             try:
                 core_collector = CoreVariableCollector(memory_service)
                 # Count messages BEFORE flush to avoid issues
@@ -882,7 +884,7 @@ async def send_message(
         
         # PHASE 2B: ACCOUNTABILITY PROMPTS
         accountability_prompt = None
-        if PHASE_2B_AVAILABLE and settings.MEMORY_ENABLED:
+        if current_user and conversation and PHASE_2B_AVAILABLE and settings.MEMORY_ENABLED:
             try:
                 goal_service = GoalService(db)
                 check_in_service = CheckInService(db)
@@ -940,7 +942,7 @@ async def send_message(
         
         # PHASE 3: PERSONALITY ROUTER - Determine accountability style
         accountability_style = None
-        if PHASE_2B_AVAILABLE:
+        if current_user and conversation and PHASE_2B_AVAILABLE:
             try:
                 from app.services.personality_router import get_personality_router
                 
