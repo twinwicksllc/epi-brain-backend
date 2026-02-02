@@ -994,6 +994,16 @@ async def send_message(
         
         ai_response = None
         last_error = None
+        errors = []
+        
+        # Check if any API keys are configured
+        has_groq_key = bool(settings.GROQ_API_KEY)
+        has_claude_key = bool(settings.CLAUDE_API_KEY)
+        
+        if not has_groq_key and not has_claude_key:
+            error_msg = "No AI API keys configured. Please set GROQ_API_KEY or CLAUDE_API_KEY environment variables."
+            logger.critical(error_msg)
+            raise Exception(error_msg)
         
         # Try primary service first, then fallback
         for service_name, service_class in [('Groq', GroqService), ('Claude', ClaudeService)]:
@@ -1013,11 +1023,14 @@ async def send_message(
                 break  # Success, exit loop
             except Exception as e:
                 last_error = e
+                errors.append(f"{service_name}: {str(e)}")
                 logger.error(f"{service_name} service failed: {e}")
                 # Try next service
         
         if ai_response is None:
-            raise Exception(f"All AI services failed. Last error: {str(last_error)}")
+            error_detail = f"All AI services failed. Errors: {'; '.join(errors)}"
+            logger.critical(error_detail)
+            raise Exception(error_detail)
         
         response_time_ms = int((datetime.utcnow() - start_time).total_seconds() * 1000)
         
@@ -1487,12 +1500,23 @@ async def stream_message(
             # Choose AI service based on configuration
             use_groq = getattr(settings, 'USE_GROQ', True)  # Default to Groq if not set
             
+            # Check if any API keys are configured
+            has_groq_key = bool(settings.GROQ_API_KEY)
+            has_claude_key = bool(settings.CLAUDE_API_KEY)
+            
+            if not has_groq_key and not has_claude_key:
+                error_msg = "No AI API keys configured. Please set GROQ_API_KEY or CLAUDE_API_KEY environment variables."
+                logger.critical(error_msg)
+                yield f"data: {json.dumps({'error': error_msg})}\n\n"
+                return
+            
             # Get streaming response (select model based on user tier)
             # Exclude the last message (current user message) from history to avoid duplicate
             conversation_history = conversation.messages[:-1] if conversation.messages else []
             
             response = None
             last_error = None
+            errors = []
             
             # Try primary service first, then fallback
             for service_name, service_class in [('Groq', GroqService), ('Claude', ClaudeService)]:
@@ -1511,11 +1535,15 @@ async def stream_message(
                     break  # Success, exit loop
                 except Exception as e:
                     last_error = e
+                    errors.append(f"{service_name}: {str(e)}")
                     logger.error(f"{service_name} streaming service failed: {e}")
                     # Try next service
             
             if response is None:
-                raise Exception(f"All AI streaming services failed. Last error: {str(last_error)}")
+                error_detail = f"All AI streaming services failed. Errors: {'; '.join(errors)}"
+                logger.critical(error_detail)
+                yield f"data: {json.dumps({'error': error_detail})}\n\n"
+                return
             
             # Stream the response
             async for chunk in response:
