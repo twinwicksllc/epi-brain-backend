@@ -4,7 +4,7 @@ Limits unauthenticated sessions to 5 messages per hour per IP
 """
 
 from datetime import datetime, timedelta
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Optional
 import logging
 
 logger = logging.getLogger(__name__)
