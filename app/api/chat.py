@@ -17,7 +17,7 @@ from app.models.conversation import Conversation
 from app.models.message import Message, MessageRole
 from app.schemas.conversation import ConversationResponse, ConversationCreate, ConversationWithMessages
 from app.schemas.message import ChatRequest, ChatResponse, MessageResponse
-from app.core.dependencies import get_current_active_user, check_message_limit
+from app.core.dependencies import get_current_active_user, get_current_user_optional, check_message_limit
 from app.core.exceptions import ConversationNotFound, UnauthorizedAccess, MessageLimitExceeded
 from app.core.rate_limiter import check_rate_limit, get_rate_limit_info
 from app.services.claude import ClaudeService
@@ -402,30 +402,41 @@ def _build_discovery_context(
 async def send_message(
     chat_request: ChatRequest,
     request: Request,
-    current_user: User = Depends(get_current_active_user),
+    current_user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_db)
 ):
     """
     Send a message and get AI response
+    Supports both authenticated and unauthenticated users (for discovery mode)
     
     Args:
         chat_request: Chat request with message and optional conversation_id
         request: FastAPI request object (for IP rate limiting)
-        current_user: Current authenticated user
+        current_user: Current authenticated user (optional, for discovery mode)
         db: Database session
         
     Returns:
         AI response with message details
     """
-    # Check message limit
-    if not check_message_limit(current_user, db):
-        raise MessageLimitExceeded()
-    
     mode = (chat_request.mode or "").strip()
     if not mode:
         mode = DISCOVERY_MODE_ID
     chat_request.mode = mode
     discovery_mode_requested = mode == DISCOVERY_MODE_ID
+    
+    # For discovery mode, check if user is authenticated
+    # If not authenticated, skip user-specific checks
+    if not discovery_mode_requested:
+        # Require authentication for non-discovery modes
+        if current_user is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required for this mode"
+            )
+        
+        # Check message limit for authenticated users
+        if not check_message_limit(current_user, db):
+            raise MessageLimitExceeded()
 
     # IP-based rate limiting for discovery mode (unauthenticated sessions)
     if discovery_mode_requested:
@@ -458,7 +469,7 @@ async def send_message(
         logger.info(f"Discovery mode rate limit check for IP {client_ip}: {remaining} messages remaining")
 
     # Check personality access (discovery mode is always available)
-    if not discovery_mode_requested and mode not in current_user.subscribed_personalities:
+    if not discovery_mode_requested and current_user and mode not in current_user.subscribed_personalities:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You are not subscribed to this personality."
@@ -472,30 +483,33 @@ async def send_message(
         discovery_metadata = _capture_discovery_metadata(chat_request.message)
     
     # Get or create conversation
-    if chat_request.conversation_id:
-        conversation = db.query(Conversation).filter(
-            Conversation.id == chat_request.conversation_id,
-            Conversation.user_id == current_user.id
-        ).first()
-        
-        if not conversation:
-            raise ConversationNotFound()
-    else:
-        # Create new conversation
-        conversation = Conversation(
-            user_id=current_user.id,
-            mode=chat_request.mode,
-            title=chat_request.message[:50] + "..." if len(chat_request.message) > 50 else chat_request.message
-        )
-        db.add(conversation)
-        db.flush()
+    # For discovery mode without authentication, we won't persist conversations
+    conversation = None
+    if current_user:
+        if chat_request.conversation_id:
+            conversation = db.query(Conversation).filter(
+                Conversation.id == chat_request.conversation_id,
+                Conversation.user_id == current_user.id
+            ).first()
+            
+            if not conversation:
+                raise ConversationNotFound()
+        else:
+            # Create new conversation
+            conversation = Conversation(
+                user_id=current_user.id,
+                mode=chat_request.mode,
+                title=chat_request.message[:50] + "..." if len(chat_request.message) > 50 else chat_request.message
+            )
+            db.add(conversation)
+            db.flush()
     
     # DISCOVERY FAILSAFE: Check engagement and strike counter with refined logic
     discovery_failsafe_triggered = False
     non_engagement_strikes = 0
     honest_attempt_strikes = 0
     
-    if discovery_mode_requested:
+    if discovery_mode_requested and conversation:
         user_engaged = _check_discovery_engagement(discovery_metadata)
         invalid_name_detected = discovery_metadata.get("invalid_name_format", False)
         non_engagement_strikes = _get_non_engagement_count(conversation)
@@ -555,18 +569,30 @@ async def send_message(
             non_engagement_strikes=non_engagement_strikes,
             is_honest_attempt=(honest_attempt_strikes > 0)
         )
+    elif discovery_mode_requested:
+        # Discovery mode without conversation (unauthenticated)
+        # Simplified context for unauthenticated users
+        trigger_signup = bool(discovery_metadata["captured_name"] and discovery_metadata["captured_intent"])
+        discovery_context_block = _build_discovery_context(
+            discovery_metadata,
+            trigger_signup,
+            invalid_name_format=False,
+            non_engagement_strikes=0,
+            is_honest_attempt=True
+        )
     
-    # Save user message
-    user_message = Message(
-        conversation_id=conversation.id,
-        role=MessageRole.USER,
-        content=chat_request.message
-    )
-    db.add(user_message)
-    db.flush()
+    # Save user message (only if authenticated)
+    if conversation:
+        user_message = Message(
+            conversation_id=conversation.id,
+            role=MessageRole.USER,
+            content=chat_request.message
+        )
+        db.add(user_message)
+        db.flush()
     
     # DISCOVERY FAILSAFE: Return hardcoded response if failsafe triggered
-    if discovery_failsafe_triggered:
+    if discovery_failsafe_triggered and conversation:
         # Create failsafe response message
         failsafe_message = Message(
             conversation_id=conversation.id,
@@ -599,7 +625,7 @@ async def send_message(
     # PHASE 4: SAFETY CHECKS (Psychology Expert Mode)
     safety_context = ""
     is_high_risk = False
-    if PHASE_4_AVAILABLE and chat_request.mode == "psychology_expert":
+    if PHASE_4_AVAILABLE and chat_request.mode == "psychology_expert" and current_user and conversation:
         try:
             safety_service = SafetyService()
             
@@ -648,6 +674,7 @@ async def send_message(
     # Check if depth tracking is enabled for this mode
     depth_enabled = (
         settings.DEPTH_ENABLED and
+        conversation and
         conversation.depth_enabled and
         chat_request.mode in settings.DEPTH_TRACKED_MODES
     )
@@ -655,7 +682,7 @@ async def send_message(
     # Score the turn if depth tracking is enabled
     turn_score = None
     new_depth = None
-    if depth_enabled:
+    if depth_enabled and conversation and current_user:
         try:
             logger.info(f"Scoring depth for conversation {conversation.id}, mode {chat_request.mode}")
             scoring_result = await depth_scorer.score_turn(

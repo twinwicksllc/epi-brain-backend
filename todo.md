@@ -1,4 +1,27 @@
-# EPI Brain - Accountability Layer Implementation
+# Fix Discovery Chat Homepage Issue
+
+## Problem
+Homepage chatbot returns 404 error because:
+- Frontend calls `/api/v1/chat` endpoint
+- Backend only has `/api/v1/chat/message` endpoint
+- Backend requires authentication even for discovery mode
+- Discovery mode should work without authentication for unauthenticated users
+
+## Solution
+1. Create optional authentication dependency
+2. Update chat endpoint to allow discovery mode without auth
+3. Fix frontend to use correct endpoint
+
+## Tasks
+- [ ] Create optional authentication dependency in dependencies.py
+- [ ] Update chat endpoint to use optional auth for discovery mode
+- [ ] Fix frontend DiscoveryChat to use correct endpoint
+- [ ] Test the fix locally
+- [ ] Commit and push changes
+
+---
+
+## Previous: EPI Brain - Accountability Layer Implementation
 
 ## Current Status: Phase 2 Services Created (Needs Refinement)
 

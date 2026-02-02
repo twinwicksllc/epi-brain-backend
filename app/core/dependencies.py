@@ -81,6 +81,92 @@ async def get_current_active_user(
     return current_user
 
 
+async def get_current_user_optional(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False)),
+    db: Session = Depends(get_db)
+) -> Optional[User]:
+    """
+    Optional dependency to get current authenticated user from JWT token
+    Returns None if no valid token is provided (for unauthenticated access)
+    
+    Args:
+        credentials: Optional HTTP Bearer token credentials
+        db: Database session
+        
+    Returns:
+        Current user object or None if not authenticated
+    """
+    if not credentials:
+        return None
+    
+    try:
+        # Extract token from credentials
+        token = credentials.credentials
+        
+        # Verify and decode token
+        payload = verify_token(token, token_type="access")
+        
+        if payload is None:
+            return None
+        
+        # Extract user_id from payload
+        user_id: Optional[str] = payload.get("sub")
+        
+        if user_id is None:
+            return None
+        
+        # Get user from database
+        user = db.query(User).filter(User.id == UUID(user_id)).first()
+        
+        return user
+    except Exception:
+        # Return None for any authentication errors
+        return None
+
+
+async def get_current_user_optional(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False)),
+    db: Session = Depends(get_db)
+) -> Optional[User]:
+    """
+    Optional dependency to get current authenticated user from JWT token
+    Returns None if no valid token is provided (for unauthenticated access)
+    
+    Args:
+        credentials: Optional HTTP Bearer token credentials
+        db: Database session
+        
+    Returns:
+        Current user object or None if not authenticated
+    """
+    if not credentials:
+        return None
+    
+    try:
+        # Extract token from credentials
+        token = credentials.credentials
+        
+        # Verify and decode token
+        payload = verify_token(token, token_type="access")
+        
+        if payload is None:
+            return None
+        
+        # Extract user_id from payload
+        user_id: Optional[str] = payload.get("sub")
+        
+        if user_id is None:
+            return None
+        
+        # Get user from database
+        user = db.query(User).filter(User.id == UUID(user_id)).first()
+        
+        return user
+    except Exception:
+        # Return None for any authentication errors
+        return None
+
+
 async def require_pro_tier(
     current_user: User = Depends(get_current_active_user)
 ) -> User:
