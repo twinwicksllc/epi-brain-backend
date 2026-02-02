@@ -995,7 +995,7 @@ async def send_message(
             message=chat_request.message,
             mode=chat_request.mode,
             conversation_history=conversation_history,
-            user_tier=current_user.tier.value if hasattr(current_user, "tier") else None,
+            user_tier=current_user.tier.value if current_user and hasattr(current_user, "tier") else None,
             memory_context=combined_memory_context,  # Pass combined memory context to AI service
             accountability_style=accountability_style,  # Phase 3: Pass accountability style
             conversation_depth=new_depth if new_depth else None  # Phase 3: Pass conversation depth
