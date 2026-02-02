@@ -422,7 +422,8 @@ async def send_message(
     if not mode:
         mode = DISCOVERY_MODE_ID
     chat_request.mode = mode
-    discovery_mode_requested = mode == DISCOVERY_MODE_ID
+    # Accept both "discovery" and "discovery_mode" for discovery mode
+    discovery_mode_requested = mode == DISCOVERY_MODE_ID or mode == "discovery"
     
     # For discovery mode, check if user is authenticated
     # If not authenticated, skip user-specific checks
