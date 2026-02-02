@@ -983,23 +983,37 @@ async def send_message(
         
         # Choose AI service based on configuration
         use_groq = getattr(settings, 'USE_GROQ', True)  # Default to Groq if not set
-        if use_groq:
-            ai_service = GroqService()
-        else:
-            ai_service = ClaudeService()
         
         # Get AI response with combined memory context (existing + semantic)
         # Exclude the last message (current user message) from history to avoid duplicate
         conversation_history = conversation.messages[:-1] if conversation and conversation.messages else []
-        ai_response = await ai_service.get_response(
-            message=chat_request.message,
-            mode=chat_request.mode,
-            conversation_history=conversation_history,
-            user_tier=current_user.tier.value if current_user and hasattr(current_user, "tier") else None,
-            memory_context=combined_memory_context,  # Pass combined memory context to AI service
-            accountability_style=accountability_style,  # Phase 3: Pass accountability style
-            conversation_depth=new_depth if new_depth else None  # Phase 3: Pass conversation depth
-        )
+        
+        ai_response = None
+        last_error = None
+        
+        # Try primary service first, then fallback
+        for service_name, service_class in [('Groq', GroqService), ('Claude', ClaudeService)]:
+            try:
+                logger.info(f"Attempting to use {service_name} service...")
+                ai_service = service_class()
+                ai_response = await ai_service.get_response(
+                    message=chat_request.message,
+                    mode=chat_request.mode,
+                    conversation_history=conversation_history,
+                    user_tier=current_user.tier.value if current_user and hasattr(current_user, "tier") else None,
+                    memory_context=combined_memory_context,  # Pass combined memory context to AI service
+                    accountability_style=accountability_style,  # Phase 3: Pass accountability style
+                    conversation_depth=new_depth if new_depth else None  # Phase 3: Pass conversation depth
+                )
+                logger.info(f"Successfully got response from {service_name} service")
+                break  # Success, exit loop
+            except Exception as e:
+                last_error = e
+                logger.error(f"{service_name} service failed: {e}")
+                # Try next service
+        
+        if ai_response is None:
+            raise Exception(f"All AI services failed. Last error: {str(last_error)}")
         
         response_time_ms = int((datetime.utcnow() - start_time).total_seconds() * 1000)
         
@@ -1468,22 +1482,38 @@ async def stream_message(
             
             # Choose AI service based on configuration
             use_groq = getattr(settings, 'USE_GROQ', True)  # Default to Groq if not set
-            if use_groq:
-                ai_service = GroqService()
-            else:
-                ai_service = ClaudeService()
-
+            
             # Get streaming response (select model based on user tier)
             # Exclude the last message (current user message) from history to avoid duplicate
             conversation_history = conversation.messages[:-1] if conversation.messages else []
-            response = await ai_service.get_streaming_response(
-                message=chat_request.message,
-                mode=chat_request.mode,
-                conversation_history=conversation_history,
-                user_tier=current_user.tier.value if hasattr(current_user, "tier") else None,
-                accountability_style=accountability_style,  # Phase 3: Pass accountability style
-                conversation_depth=new_depth if new_depth else None  # Phase 3: Pass conversation depth
-            )
+            
+            response = None
+            last_error = None
+            
+            # Try primary service first, then fallback
+            for service_name, service_class in [('Groq', GroqService), ('Claude', ClaudeService)]:
+                try:
+                    logger.info(f"Attempting to use {service_name} service for streaming...")
+                    ai_service = service_class()
+                    response = await ai_service.get_streaming_response(
+                        message=chat_request.message,
+                        mode=chat_request.mode,
+                        conversation_history=conversation_history,
+                        user_tier=current_user.tier.value if hasattr(current_user, "tier") else None,
+                        accountability_style=accountability_style,  # Phase 3: Pass accountability style
+                        conversation_depth=new_depth if new_depth else None  # Phase 3: Pass conversation depth
+                    )
+                    logger.info(f"Successfully got streaming response from {service_name} service")
+                    break  # Success, exit loop
+                except Exception as e:
+                    last_error = e
+                    logger.error(f"{service_name} streaming service failed: {e}")
+                    # Try next service
+            
+            if response is None:
+                raise Exception(f"All AI streaming services failed. Last error: {str(last_error)}")
+            
+            # Stream the response
             async for chunk in response:
                 full_response += chunk
                 yield f"data: {json.dumps({'content': chunk})}\n\n"
