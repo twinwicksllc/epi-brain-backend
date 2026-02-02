@@ -13,6 +13,9 @@ logger = logging.getLogger(__name__)
 # In production, use Redis for distributed rate limiting
 _rate_limit_storage: Dict[str, Tuple[int, datetime]] = {}
 
+# Discovery context storage (IP -> captured_name, captured_intent, message_history)
+_discovery_context_storage: Dict[str, Dict[str, any]] = {}
+
 # Configuration
 MAX_MESSAGES_PER_HOUR = 5
 RATE_LIMIT_WINDOW_HOURS = 1
@@ -55,6 +58,10 @@ def check_rate_limit(ip_address: str) -> Tuple[bool, int]:
         else:
             # Window expired, start new window
             _rate_limit_storage[ip_address] = (1, now)
+            # Reset discovery context when window expires
+            if ip_address in _discovery_context_storage:
+                del _discovery_context_storage[ip_address]
+                logger.debug(f"Discovery context reset for IP {ip_address}")
             remaining = MAX_MESSAGES_PER_HOUR - 1
             logger.debug(f"Rate limit window reset for IP {ip_address}")
             return True, remaining
@@ -64,6 +71,63 @@ def check_rate_limit(ip_address: str) -> Tuple[bool, int]:
         remaining = MAX_MESSAGES_PER_HOUR - 1
         logger.debug(f"First request from IP {ip_address}")
         return True, remaining
+
+
+def get_discovery_context(ip_address: str) -> Dict[str, any]:
+    """
+    Get discovery context for an IP address.
+    
+    Args:
+        ip_address: The IP address to check
+        
+    Returns:
+        Dictionary with captured_name, captured_intent, and message_history
+    """
+    return _discovery_context_storage.get(ip_address, {
+        "captured_name": None,
+        "captured_intent": None,
+        "message_history": [],
+        "non_engagement_strikes": 0,
+        "honest_attempt_strikes": 0,
+        "repetition_count": 0
+    })
+
+
+def update_discovery_context(ip_address: str, metadata: Dict[str, Optional[str]], user_message: str):
+    """
+    Update discovery context for an IP address.
+    
+    Args:
+        ip_address: The IP address
+        metadata: Captured name and intent
+        user_message: Current user message
+    """
+    if ip_address not in _discovery_context_storage:
+        _discovery_context_storage[ip_address] = {
+            "captured_name": None,
+            "captured_intent": None,
+            "message_history": [],
+            "non_engagement_strikes": 0,
+            "honest_attempt_strikes": 0,
+            "repetition_count": 0
+        }
+    
+    context = _discovery_context_storage[ip_address]
+    
+    # Update captured fields if present
+    if metadata.get("captured_name"):
+        context["captured_name"] = metadata["captured_name"]
+    
+    if metadata.get("captured_intent"):
+        context["captured_intent"] = metadata["captured_intent"]
+    
+    # Add message to history (keep last 5 messages)
+    context["message_history"].append(user_message)
+    if len(context["message_history"]) > 5:
+        context["message_history"] = context["message_history"][-5:]
+    
+    logger.debug(f"Updated discovery context for IP {ip_address}: "
+                 f"name={context['captured_name']}, intent={context['captured_intent']}")
 
 
 def clean_expired_entries():
@@ -81,6 +145,9 @@ def clean_expired_entries():
     
     for ip_address in expired_ips:
         del _rate_limit_storage[ip_address]
+        # Also clean up discovery context
+        if ip_address in _discovery_context_storage:
+            del _discovery_context_storage[ip_address]
         logger.debug(f"Cleaned up expired rate limit entry for IP {ip_address}")
     
     if expired_ips:

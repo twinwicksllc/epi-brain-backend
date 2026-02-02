@@ -19,7 +19,7 @@ from app.schemas.conversation import ConversationResponse, ConversationCreate, C
 from app.schemas.message import ChatRequest, ChatResponse, MessageResponse
 from app.core.dependencies import get_current_active_user, get_current_user_optional, check_message_limit
 from app.core.exceptions import ConversationNotFound, UnauthorizedAccess, MessageLimitExceeded
-from app.core.rate_limiter import check_rate_limit, get_rate_limit_info
+from app.core.rate_limiter import check_rate_limit, get_rate_limit_info, get_discovery_context, update_discovery_context
 from app.services.claude import ClaudeService
 from app.services.groq_service import GroqService
 from app.services.memory_service import MemoryService
@@ -162,6 +162,44 @@ def _sanitize_discovery_value(value: str) -> str:
     shortened = trimmed[:MAX_DISCOVERY_METADATA_CHARS - 3].rstrip()
     logger.debug("Truncating discovery metadata to %d chars", MAX_DISCOVERY_METADATA_CHARS)
     return f"{shortened}..."
+
+
+def _detect_repetition(message: str, message_history: list) -> Tuple[bool, int]:
+    """
+    Detect if the user message is repetitive.
+    
+    Returns:
+        Tuple of (is_repetitive, repetition_count)
+    """
+    if not message_history:
+        return False, 0
+    
+    message_lower = message.strip().lower()
+    
+    # Check against recent messages
+    recent_messages = message_history[-3:] if len(message_history) >= 3 else message_history
+    
+    repetition_count = 0
+    for hist_msg in recent_messages:
+        if hist_msg.lower().strip() == message_lower:
+            repetition_count += 1
+    
+    # Also check for semantic similarity (same topic, similar wording)
+    if repetition_count == 0 and len(recent_messages) >= 2:
+        # Check if current message is very similar to previous messages
+        words_current = set(message_lower.split())
+        for hist_msg in recent_messages:
+            words_hist = set(hist_msg.lower().split())
+            if words_current and words_hist:
+                # Calculate Jaccard similarity
+                intersection = words_current & words_hist
+                union = words_current | words_hist
+                similarity = len(intersection) / len(union) if union else 0
+                if similarity > 0.7:  # 70% similarity threshold
+                    repetition_count += 1
+    
+    is_repetitive = repetition_count > 0
+    return is_repetitive, repetition_count
 
 
 def _capture_discovery_metadata(message: str) -> Dict[str, Optional[str]]:
@@ -318,7 +356,9 @@ def _build_discovery_context(
     trigger_signup_bridge: bool,
     invalid_name_format: bool = False,
     non_engagement_strikes: int = 0,
-    is_honest_attempt: bool = False
+    is_honest_attempt: bool = False,
+    repetition_count: int = 0,
+    message_history: list = None
 ) -> Optional[str]:
     """
     Build context instructions for the LLM in Discovery Mode.
@@ -328,6 +368,7 @@ def _build_discovery_context(
     - Whether verification is needed
     - What to do if both pieces are captured
     - How to handle non-engagement
+    - Current topic for context retention
     
     Args:
         metadata: Captured name and intent
@@ -335,16 +376,41 @@ def _build_discovery_context(
         invalid_name_format: Whether user provided sentence instead of name
         non_engagement_strikes: Current non-engagement strike count
         is_honest_attempt: Whether user is genuinely trying
+        repetition_count: Number of repetitive inputs detected
+        message_history: Recent messages from user
     """
     lines = []
     
+    # CRITICAL: Inject current topic for context retention
+    if metadata.get("captured_intent"):
+        lines.append(f"\n📌 CURRENT TOPIC: {metadata['captured_intent']}")
+        lines.append("→ ALWAYS remember this topic when user uses pronouns (it, this, that)")
+        lines.append("→ Context retention is CRITICAL - do not forget the topic between turns")
+    
     # Report captured data
     if metadata.get("captured_name"):
-        lines.append(f"✓ Name Captured: {metadata['captured_name']}")
+        lines.append(f"\n✓ Name Captured: {metadata['captured_name']}")
         lines.append("→ Next step: Verify the name, then ask about intent")
     
     if metadata.get("captured_intent"):
         lines.append(f"✓ Intent Captured: {metadata['captured_intent']}")
+    
+    # Handle repetition detection
+    if repetition_count >= 2:
+        lines.append(f"\n⚠️ REPETITION DETECTED (cycle {repetition_count})")
+        lines.append("→ User is looping on the same topic")
+        lines.append("→ PIVOT STRATEGY: Stop asking about feelings/opinions")
+        lines.append(f"→ Say: 'I have some great strategies for {metadata.get('captured_intent', 'this topic')}, but to dive deeper, let's get your account set up.'")
+        lines.append("→ Then trigger signup bridge immediately")
+    
+    # Handle invalid name format
+    if invalid_name_format:
+        lines.append(
+            "\n⚠️ INVALID NAME FORMAT: User provided a sentence or long text, not a name.\n"
+            "→ Action: Politely clarify without moving to intent question.\n"
+            "→ Example: 'That sounds interesting, but I'd love to know what to actually call you. What's your name?'\n"
+            "→ Do NOT ask about their intent until you have a proper name."
+        )
     
     # Handle invalid name format
     if invalid_name_format:
@@ -472,6 +538,30 @@ async def send_message(
         
         # Log rate limit info
         logger.info(f"Discovery mode rate limit check for IP {client_ip}: {remaining} messages remaining")
+        
+        # Get stored discovery context for this IP
+        stored_context = get_discovery_context(client_ip)
+        logger.info(f"Retrieved stored discovery context for IP {client_ip}: {stored_context}")
+        
+        # Check if user hit the limit (3 messages for proactive gating)
+        DISCOVERY_LIMIT_THRESHOLD = 3
+        messages_used = get_rate_limit_info(client_ip).get("messages_used", 0)
+        
+        if messages_used >= DISCOVERY_LIMIT_THRESHOLD:
+            logger.warning(f"User hit discovery limit at {messages_used} messages (threshold: {DISCOVERY_LIMIT_THRESHOLD})")
+            # Return limit_reached response immediately
+            return ChatResponse(
+                message_id=None,
+                conversation_id=None,
+                content="I'd love to continue exploring this topic with you, but I've reached my limit for discovery mode messages. To continue our conversation about " + (stored_context.get("captured_intent") or "this topic") + ", please create a free account. It only takes a moment!",
+                mode=mode,
+                created_at=datetime.utcnow(),
+                tokens_used=None,
+                response_time_ms=None,
+                depth=None,
+                metadata={"limit_reached": "true", "messages_used": str(messages_used)},
+                limit_reached=True
+            )
 
     # Check personality access (discovery mode is always available)
     if not discovery_mode_requested and current_user and mode not in current_user.subscribed_personalities:
@@ -485,7 +575,35 @@ async def send_message(
     discovery_failsafe_triggered = False
     
     if discovery_mode_requested:
-        discovery_metadata = _capture_discovery_metadata(chat_request.message)
+        # Get current message metadata
+        current_metadata = _capture_discovery_metadata(chat_request.message)
+        
+        # Merge with stored context (stored context takes precedence)
+        if stored_context.get("captured_name"):
+            discovery_metadata["captured_name"] = stored_context["captured_name"]
+        if current_metadata.get("captured_name"):
+            discovery_metadata["captured_name"] = current_metadata["captured_name"]
+        
+        if stored_context.get("captured_intent"):
+            discovery_metadata["captured_intent"] = stored_context["captured_intent"]
+        if current_metadata.get("captured_intent"):
+            discovery_metadata["captured_intent"] = current_metadata["captured_intent"]
+        
+        # Update stored context with new information
+        update_discovery_context(client_ip, discovery_metadata, chat_request.message)
+        
+        # Detect repetition
+        is_repetitive, repetition_increment = _detect_repetition(
+            chat_request.message, 
+            stored_context.get("message_history", [])
+        )
+        
+        if is_repetitive:
+            stored_context["repetition_count"] += repetition_increment
+            logger.warning(f"Repetition detected for IP {client_ip}: count={stored_context['repetition_count']}")
+        else:
+            # Reset repetition count if user provides new content
+            stored_context["repetition_count"] = 0
     
     # Get or create conversation
     # For discovery mode without authentication, we won't persist conversations
@@ -572,7 +690,9 @@ async def send_message(
             trigger_signup,
             invalid_name_format=invalid_name_detected,
             non_engagement_strikes=non_engagement_strikes,
-            is_honest_attempt=(honest_attempt_strikes > 0)
+            is_honest_attempt=(honest_attempt_strikes > 0),
+            repetition_count=stored_context.get("repetition_count", 0),
+            message_history=stored_context.get("message_history", [])
         )
     elif discovery_mode_requested:
         # Discovery mode without conversation (unauthenticated)
@@ -583,7 +703,9 @@ async def send_message(
             trigger_signup,
             invalid_name_format=False,
             non_engagement_strikes=0,
-            is_honest_attempt=True
+            is_honest_attempt=True,
+            repetition_count=stored_context.get("repetition_count", 0),
+            message_history=stored_context.get("message_history", [])
         )
     
     # Save user message (only if authenticated)

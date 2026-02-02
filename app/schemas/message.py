@@ -52,3 +52,4 @@ class ChatResponse(BaseModel):
     response_time_ms: Optional[int] = None
     depth: Optional[float] = None  # Current conversation depth (0.0-1.0)
     metadata: Optional[Dict[str, str]] = None
+    limit_reached: bool = False  # True if user hit discovery mode limit
