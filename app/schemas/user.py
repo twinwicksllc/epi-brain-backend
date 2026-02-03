@@ -50,6 +50,8 @@ class UserResponse(UserBase):
     message_count: str
     referral_code: Optional[str]
     referral_credits: str
+    voice_limit: Optional[int] = None  # null = unlimited (for admin/pro)
+    voice_used: int = 0  # Voice messages used today
     created_at: datetime
     last_login: Optional[datetime]
     global_memory: dict = {}  # Phase 1: Global memory

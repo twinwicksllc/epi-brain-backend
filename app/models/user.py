@@ -49,6 +49,10 @@ class User(Base):
     message_count = Column(String, default="0")  # Monthly message count
     last_message_reset = Column(DateTime, default=datetime.utcnow)
     
+    # Voice interaction limits
+    voice_limit = Column(Integer, nullable=True)  # Daily voice message limit (null = unlimited for admin/pro)
+    voice_used = Column(Integer, default=0, nullable=False)  # Voice messages used today
+    
     # Admin flag
     is_admin = Column(String, default="false", nullable=False)  # Stored as string for SQLite compatibility
     

@@ -109,6 +109,12 @@ class NEBPStateMachine:
         discovery_metadata: Optional[Dict[str, Optional[str]]] = None,
         silo_id: Optional[str] = None
     ) -> Dict[str, object]:
+        """
+        Calculate clarity metrics from message content and discovery metadata.
+        Handles both discovery mode (with metadata) and legacy conversations (without metadata).
+        
+        For legacy conversations without discovery_metadata, we infer metrics from message content only.
+        """
         metadata = discovery_metadata or {}
         captured_name = bool(metadata.get("captured_name"))
         captured_intent = bool(metadata.get("captured_intent"))
@@ -124,7 +130,12 @@ class NEBPStateMachine:
         elif silo_key == "education":
             silo_focus_identified = cls._contains_keywords(combined_text, EDUCATION_KEYWORDS)
         else:
-            silo_focus_identified = False
+            # For legacy conversations without silo_id, check message for any silo focus
+            silo_focus_identified = (
+                cls._contains_keywords(combined_text, SALES_BOTTLENECK_KEYWORDS) or
+                cls._contains_keywords(combined_text, SPIRITUAL_KEYWORDS) or
+                cls._contains_keywords(combined_text, EDUCATION_KEYWORDS)
+            )
 
         action_readiness = cls._contains_keywords(combined_text, ACTION_KEYWORDS)
 

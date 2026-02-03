@@ -16,17 +16,38 @@ router = APIRouter()
 
 @router.get("/me", response_model=UserResponse)
 async def get_current_user_profile(
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
 ):
     """
     Get current user profile
     
     Args:
         current_user: Current authenticated user
+        db: Database session
         
     Returns:
-        User profile data
+        User profile data with voice limits
     """
+    from app.services.voice_tracking import VoiceUsageTracker
+    
+    # Calculate voice limits based on user tier and admin status
+    is_admin = (current_user.is_admin.lower() == "true") if current_user.is_admin else False
+    
+    if is_admin:
+        # Admins get null (unlimited)
+        current_user.voice_limit = None
+    else:
+        # Set limit based on tier
+        tracker = VoiceUsageTracker(db)
+        limit = tracker.get_daily_limit(str(current_user.tier), is_admin=False)
+        current_user.voice_limit = limit
+    
+    # Calculate voice_used for today
+    tracker = VoiceUsageTracker(db)
+    daily_count = tracker.get_daily_count(str(current_user.id))
+    current_user.voice_used = daily_count
+    
     return current_user
 
 
