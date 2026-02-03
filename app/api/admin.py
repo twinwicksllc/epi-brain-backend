@@ -4,11 +4,14 @@ Admin API Endpoints
 
 from fastapi import APIRouter, Depends, HTTPException, Security
 from sqlalchemy.orm import Session
-from typing import List
+from sqlalchemy import func, and_
+from typing import List, Optional
 from pydantic import BaseModel, Field
+from datetime import datetime, timedelta
 
 from app.database import get_db
-from app.models.user import User, UserTier
+from app.models.user import User, UserTier, PlanTier
+from app.models.usage_log import UsageLog
 from app.schemas.user import UserResponse
 from app.core.dependencies import get_current_active_user
 from app.core.security import verify_admin_key
@@ -33,6 +36,32 @@ class CleanupResponse(BaseModel):
     cutoff_date: str
     dry_run: bool
     message: str
+
+
+class UserUsageStats(BaseModel):
+    """User usage statistics for admin reporting"""
+    user_id: str
+    email: str
+    plan_tier: PlanTier
+    last_login: Optional[datetime] = None
+    total_tokens_month: int = Field(default=0, description="Total tokens consumed this month")
+    total_messages_month: int = Field(default=0, description="Total messages this month")
+    total_cost_month: float = Field(default=0.0, description="Total cost this month in USD")
+    voice_used_month: int = Field(default=0, description="Voice interactions used this month")
+    voice_limit: Optional[int] = Field(default=None, description="Voice daily limit (None = unlimited)")
+    is_admin: bool = False
+    is_enterprise_account: bool = False
+    created_at: datetime
+
+
+class AdminUsageResponse(BaseModel):
+    """Response model for admin usage endpoint"""
+    success: bool
+    period_start: datetime
+    period_end: datetime
+    total_users: int
+    users: List[UserUsageStats]
+    summary: dict = Field(default_factory=dict, description="Aggregate statistics")
 
 
 @router.post("/users/{user_id}/upgrade-tier", response_model=UserResponse)
@@ -409,3 +438,138 @@ async def cleanup_user_conversations(
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"User cleanup failed: {str(e)}")
+
+
+@router.get("/usage", response_model=AdminUsageResponse)
+async def get_usage_report(
+    admin_key: str = Security(verify_admin_key),
+    db: Session = Depends(get_db),
+    limit: int = 100,
+    sort_by: str = "tokens"  # tokens, cost, messages, voice
+):
+    """
+    Get usage report for all users (Admin only)
+    
+    Returns users sorted by their total token consumption and voice usage for the current month.
+    Includes user details like plan_tier, email, and last_login to identify power users.
+    
+    Args:
+        admin_key: Admin API key for authorization
+        db: Database session
+        limit: Maximum number of users to return (default 100)
+        sort_by: Sort field - "tokens", "cost", "messages", or "voice" (default "tokens")
+    
+    Returns:
+        AdminUsageResponse with user statistics sorted by consumption
+    """
+    try:
+        # Calculate current month date range
+        now = datetime.utcnow()
+        period_start = datetime(now.year, now.month, 1)
+        if now.month == 12:
+            period_end = datetime(now.year + 1, 1, 1)
+        else:
+            period_end = datetime(now.year, now.month + 1, 1)
+        
+        # Query all users with their usage stats for current month
+        # Aggregate usage_logs by user_id for the current month
+        usage_subquery = db.query(
+            UsageLog.user_id,
+            func.sum(UsageLog.tokens_total).label('total_tokens'),
+            func.count(UsageLog.id).label('total_messages'),
+            func.sum(UsageLog.token_cost).label('total_cost')
+        ).filter(
+            and_(
+                UsageLog.created_at >= period_start,
+                UsageLog.created_at < period_end
+            )
+        ).group_by(UsageLog.user_id).subquery()
+        
+        # Join with users table
+        query = db.query(
+            User,
+            func.coalesce(usage_subquery.c.total_tokens, 0).label('total_tokens_month'),
+            func.coalesce(usage_subquery.c.total_messages, 0).label('total_messages_month'),
+            func.coalesce(usage_subquery.c.total_cost, 0.0).label('total_cost_month')
+        ).outerjoin(
+            usage_subquery,
+            User.id == usage_subquery.c.user_id
+        )
+        
+        # Sort by requested field
+        if sort_by == "cost":
+            query = query.order_by(func.coalesce(usage_subquery.c.total_cost, 0.0).desc())
+        elif sort_by == "messages":
+            query = query.order_by(func.coalesce(usage_subquery.c.total_messages, 0).desc())
+        elif sort_by == "voice":
+            query = query.order_by(User.voice_used.desc())
+        else:  # default to tokens
+            query = query.order_by(func.coalesce(usage_subquery.c.total_tokens, 0).desc())
+        
+        # Apply limit
+        query = query.limit(limit)
+        
+        # Execute query
+        results = query.all()
+        
+        # Build user stats list
+        user_stats_list = []
+        total_tokens_all = 0
+        total_messages_all = 0
+        total_cost_all = 0.0
+        total_voice_all = 0
+        
+        for row in results:
+            user = row[0]
+            total_tokens = int(row[1])
+            total_messages = int(row[2])
+            total_cost = float(row[3])
+            
+            # Aggregate for summary
+            total_tokens_all += total_tokens
+            total_messages_all += total_messages
+            total_cost_all += total_cost
+            total_voice_all += user.voice_used or 0
+            
+            user_stats = UserUsageStats(
+                user_id=str(user.id),
+                email=user.email,
+                plan_tier=user.plan_tier,
+                last_login=user.last_login,
+                total_tokens_month=total_tokens,
+                total_messages_month=total_messages,
+                total_cost_month=round(total_cost, 4),
+                voice_used_month=user.voice_used or 0,
+                voice_limit=user.get_voice_daily_limit(),
+                is_admin=user.is_admin,
+                is_enterprise_account=user.is_enterprise_account,
+                created_at=user.created_at
+            )
+            user_stats_list.append(user_stats)
+        
+        # Build summary statistics
+        summary = {
+            "total_tokens_all_users": total_tokens_all,
+            "total_messages_all_users": total_messages_all,
+            "total_cost_all_users": round(total_cost_all, 2),
+            "total_voice_all_users": total_voice_all,
+            "avg_tokens_per_user": round(total_tokens_all / len(results), 2) if results else 0,
+            "avg_cost_per_user": round(total_cost_all / len(results), 4) if results else 0,
+            "users_by_plan": {
+                "free": sum(1 for u in user_stats_list if u.plan_tier == PlanTier.FREE),
+                "premium": sum(1 for u in user_stats_list if u.plan_tier == PlanTier.PREMIUM),
+                "enterprise": sum(1 for u in user_stats_list if u.plan_tier == PlanTier.ENTERPRISE)
+            }
+        }
+        
+        return AdminUsageResponse(
+            success=True,
+            period_start=period_start,
+            period_end=period_end,
+            total_users=len(results),
+            users=user_stats_list,
+            summary=summary
+        )
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Usage report failed: {str(e)}")
