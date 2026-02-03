@@ -115,7 +115,7 @@ async def login(credentials: UserLogin, db: Session = Depends(get_db)):
                 "access_token": access_token,
                 "refresh_token": refresh_token,
                 "token_type": "bearer",
-                "user": None  # Simplified: don't return user object to avoid serialization issues
+                "user": UserResponse.model_validate(user)
             }
         except Exception as e:
             logger.error(f"❌ Token creation failed: {e}", exc_info=True)
