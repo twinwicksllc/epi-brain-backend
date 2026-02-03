@@ -1,7 +1,7 @@
 """Add voice_limit and voice_used tracking to users
 
-Revision ID: c9b2d3e4f5g6
-Revises: b8a1c2d3e4f5
+Revision ID: 2026_02_03_0002
+Revises: 2026_02_03_0001
 Create Date: 2026-02-03 00:02:00.000000
 
 """
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = 'c9b2d3e4f5g6'
-down_revision = 'b8a1c2d3e4f5'
+revision = '2026_02_03_0002'
+down_revision = '2026_02_03_0001'
 branch_labels = None
 depends_on = None
 
