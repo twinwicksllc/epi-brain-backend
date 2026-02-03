@@ -10,7 +10,7 @@ import logging
 
 from app.config import settings
 from app.models.message import Message
-from app.prompts.discovery_mode import DISCOVERY_MODE_PROMPT
+from app.prompts.discovery_mode import get_discovery_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ class GroqService:
         # Default fallback
         return settings.GROQ_MODEL
     
-    def _get_system_prompt(self, mode: str) -> str:
+    def _get_system_prompt(self, mode: str, silo_id: Optional[str] = None) -> str:
         """
         Get system prompt for specific personality mode
         
@@ -127,7 +127,7 @@ Memory: Session-only.
 Logic: Never flag repetition unless identical.
 Tone: High-energy, motivational, and health-focused.
 RESPONSE STYLE: Be concise and motivating. Keep fitness advice brief, actionable, and high-energy.""",
-            "discovery_mode": DISCOVERY_MODE_PROMPT
+            "discovery_mode": get_discovery_prompt(silo_id)
         }
 
         
@@ -164,7 +164,8 @@ RESPONSE STYLE: Be concise and motivating. Keep fitness advice brief, actionable
         user_tier: Optional[str] = None,
         memory_context: Optional[str] = None,
         accountability_style: Optional[str] = None,
-        conversation_depth: Optional[float] = None
+        conversation_depth: Optional[float] = None,
+        silo_id: Optional[str] = None
     ) -> Dict:
         """
         Get AI response from Groq
@@ -186,7 +187,7 @@ RESPONSE STYLE: Be concise and motivating. Keep fitness advice brief, actionable
             messages = []
             
             # Add system prompt as first message (with memory context if available)
-            system_prompt = self._get_system_prompt(mode)
+            system_prompt = self._get_system_prompt(mode, silo_id=silo_id)
             
             # Inject accountability style into system prompt (Phase 3)
             if accountability_style:
@@ -264,7 +265,8 @@ Use the user memory above to personalize your responses. Apply preferences natur
         conversation_history: Optional[List[Message]] = None,
         user_tier: Optional[str] = None,
         accountability_style: Optional[str] = None,
-        conversation_depth: Optional[float] = None
+        conversation_depth: Optional[float] = None,
+        silo_id: Optional[str] = None
     ) -> AsyncGenerator[str, None]:
         """
         Get streaming AI response from Groq
@@ -285,7 +287,7 @@ Use the user memory above to personalize your responses. Apply preferences natur
             messages = []
             
             # Add system prompt as first message
-            system_prompt = self._get_system_prompt(mode)
+            system_prompt = self._get_system_prompt(mode, silo_id=silo_id)
             
             # Inject accountability style into system prompt (Phase 3)
             if accountability_style:

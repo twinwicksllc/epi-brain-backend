@@ -26,6 +26,7 @@ from app.services.memory_service import MemoryService
 from app.prompts.discovery_mode import DISCOVERY_MODE_ID
 from app.services.depth_scorer import DepthScorer
 from app.services.depth_engine import ConversationDepthEngine
+from app.services.nebp_state_machine import NEBPStateMachine
 from app.config import settings
 import logging
 
@@ -495,6 +496,13 @@ async def send_message(
     if mode == "discovery":
         mode = DISCOVERY_MODE_ID
     
+    # Resolve silo_id from request metadata or stored user profile
+    silo_id = None
+    if chat_request.metadata and isinstance(chat_request.metadata, dict):
+        silo_id = chat_request.metadata.get("silo_id")
+    if not silo_id and current_user:
+        silo_id = getattr(current_user, "silo_id", None)
+
     # For discovery mode, check if user is authenticated
     # If not authenticated, skip user-specific checks
     if not discovery_mode_requested:
@@ -604,6 +612,20 @@ async def send_message(
         else:
             # Reset repetition count if user provides new content
             stored_context["repetition_count"] = 0
+
+    if current_user:
+        # Persist silo_id on user profile if provided
+        if silo_id and getattr(current_user, "silo_id", None) != silo_id:
+            current_user.silo_id = silo_id
+        # Update NEBP phase and clarity metrics
+        nebp_metrics = NEBPStateMachine.update_state(
+            current_user,
+            chat_request.message,
+            discovery_metadata if discovery_mode_requested else None,
+            silo_id=silo_id
+        )
+        if nebp_metrics:
+            db.flush()
     
     # Get or create conversation
     # For discovery mode without authentication, we won't persist conversations
@@ -1132,7 +1154,8 @@ async def send_message(
                 user_tier=current_user.tier.value if current_user and hasattr(current_user, "tier") else None,
                 memory_context=combined_memory_context,  # Pass combined memory context to AI service
                 accountability_style=accountability_style,  # Phase 3: Pass accountability style
-                conversation_depth=new_depth if new_depth else None  # Phase 3: Pass conversation depth
+                conversation_depth=new_depth if new_depth else None,  # Phase 3: Pass conversation depth
+                silo_id=silo_id
             )
             logger.info("Successfully got response from Groq service")
         except Exception as e:
@@ -1626,7 +1649,8 @@ async def stream_message(
                     conversation_history=conversation_history,
                     user_tier=current_user.tier.value if hasattr(current_user, "tier") else None,
                     accountability_style=accountability_style,  # Phase 3: Pass accountability style
-                    conversation_depth=new_depth if new_depth else None  # Phase 3: Pass conversation depth
+                    conversation_depth=new_depth if new_depth else None,  # Phase 3: Pass conversation depth
+                    silo_id=silo_id
                 )
                 logger.info("Successfully got streaming response from Groq service")
             except Exception as e:

@@ -48,6 +48,7 @@ async def register(user_data: UserCreate, db: Session = Depends(get_db)):
         email=user_data.email,
         password_hash=get_password_hash(user_data.password),
         voice_preference=user_data.voice_preference,
+        silo_id=user_data.silo_id,
     )
     
     # Generate referral code

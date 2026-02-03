@@ -39,6 +39,7 @@ class ChatRequest(BaseModel):
     conversation_id: Optional[UUID] = None
     mode: str = Field(default=DISCOVERY_MODE_ID, description="Personality mode")
     stream: bool = Field(default=False, description="Enable streaming response")
+    metadata: Optional[Dict[str, str]] = None
 
 
 class ChatResponse(BaseModel):

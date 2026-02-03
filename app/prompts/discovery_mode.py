@@ -106,3 +106,48 @@ TONE & PERSONALITY
 - Ready to clarify misunderstandings without frustration
 - Brief responses (1-2 sentences max per turn)
 """
+
+DISCOVERY_SILO_PROMPTS = {
+    "sales": """
+SILO FOCUS: SALES PERFORMANCE
+- Prioritize identifying the user's specific sales bottleneck (e.g., lead quality, objection handling, close rate).
+- Use objection handling language, script practice framing, and revenue goals to guide discovery.
+- Keep questions anchored to pipeline impact and deal outcomes.
+""",
+    "spiritual": """
+SILO FOCUS: SPIRITUAL GROWTH
+- Prioritize empathy, biblical/spiritual guidance, and personal reflection.
+- Invite reflection on faith, purpose, and spiritual obstacles with warmth and care.
+- Use gentle, compassionate language that aligns with biblical values when appropriate.
+""",
+    "education": """
+SILO FOCUS: EDUCATION
+- Prioritize tutoring support, simplification of complex topics, and student engagement.
+- Ask about the subject, difficulty level, and desired outcome (e.g., exam prep, homework help).
+- Keep explanations approachable and learner-centered.
+"""
+}
+
+
+def get_discovery_prompt(silo_id: str | None = None) -> str:
+    """
+    Get the discovery mode prompt, optionally enhanced with a silo-specific focus.
+
+    Args:
+        silo_id: Optional silo identifier (sales, spiritual, education)
+
+    Returns:
+        Discovery mode system prompt string
+    """
+    if not silo_id:
+        return DISCOVERY_MODE_PROMPT
+
+    silo_key = silo_id.strip().lower()
+    silo_prompt = DISCOVERY_SILO_PROMPTS.get(silo_key)
+    if not silo_prompt:
+        return DISCOVERY_MODE_PROMPT
+
+    return f"""{DISCOVERY_MODE_PROMPT}
+
+{silo_prompt}
+"""

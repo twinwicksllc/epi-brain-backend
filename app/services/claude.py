@@ -9,7 +9,7 @@ import logging
 
 from app.config import settings
 from app.models.message import Message
-from app.prompts.discovery_mode import DISCOVERY_MODE_PROMPT
+from app.prompts.discovery_mode import get_discovery_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ class ClaudeService:
         self.model = settings.CLAUDE_MODEL
         self.max_tokens = settings.CLAUDE_MAX_TOKENS
     
-    def _get_system_prompt(self, mode: str) -> str:
+    def _get_system_prompt(self, mode: str, silo_id: Optional[str] = None) -> str:
         """
         Get system prompt for specific personality mode
         
@@ -126,7 +126,7 @@ Tone: Strategic, analytical, practical, and results-driven.""",
             - Maintain motivation
 
             Tone: Motivational, supportive, health-focused, and encouraging.""",
-            "discovery_mode": DISCOVERY_MODE_PROMPT
+            "discovery_mode": get_discovery_prompt(silo_id)
         }
         
         return prompts.get(mode, prompts["personal_friend"])
@@ -160,7 +160,8 @@ Tone: Strategic, analytical, practical, and results-driven.""",
         user_tier: Optional[str] = None,
         memory_context: Optional[str] = None,
         accountability_style: Optional[str] = None,
-        conversation_depth: Optional[float] = None
+        conversation_depth: Optional[float] = None,
+        silo_id: Optional[str] = None
     ) -> Dict:
         """
         Get AI response from Claude
@@ -190,7 +191,7 @@ Tone: Strategic, analytical, practical, and results-driven.""",
             })
             
             # Get system prompt
-            system_prompt = self._get_system_prompt(mode)
+            system_prompt = self._get_system_prompt(mode, silo_id=silo_id)
             
             # Inject accountability style into system prompt (Phase 3)
             if accountability_style:

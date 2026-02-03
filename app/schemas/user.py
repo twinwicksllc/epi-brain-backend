@@ -19,6 +19,7 @@ class UserCreate(UserBase):
     """Schema for user registration"""
     password: str = Field(..., min_length=8, max_length=100)
     voice_preference: Optional[VoicePreference] = VoicePreference.NONE
+    silo_id: Optional[str] = Field(default=None, max_length=50)
 
 
 class UserLogin(BaseModel):
@@ -34,6 +35,7 @@ class UserUpdate(BaseModel):
     accountability_style: Optional[str] = None  # Phase 3: tactical, grace, analyst, adaptive
     sentiment_override_enabled: Optional[bool] = None  # Phase 3: Allow AI to adjust based on mood
     depth_sensitivity_enabled: Optional[bool] = None  # Phase 3: Allow tone adjustment based on depth
+    silo_id: Optional[str] = Field(default=None, max_length=50)
 
 
 class UserResponse(UserBase):
@@ -42,6 +44,9 @@ class UserResponse(UserBase):
     tier: UserTier
     voice_preference: VoicePreference
     primary_mode: str
+    silo_id: Optional[str] = None
+    nebp_phase: Optional[str] = None
+    nebp_clarity_metrics: dict = {}
     message_count: str
     referral_code: Optional[str]
     referral_credits: str

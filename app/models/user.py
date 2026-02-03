@@ -43,6 +43,7 @@ class User(Base):
     # Preferences
     voice_preference = Column(SQLEnum(VoicePreference), default=VoicePreference.NONE)
     primary_mode = Column(String(50), default="personal_friend")
+    silo_id = Column(String(50), nullable=True)
     
     # Usage tracking
     message_count = Column(String, default="0")  # Monthly message count
@@ -58,6 +59,8 @@ class User(Base):
     
     # Memory system
     global_memory = Column(JSON, default={}, nullable=False)  # Persistent cross-session memory
+    nebp_phase = Column(String(20), default="discovery", nullable=False)
+    nebp_clarity_metrics = Column(JSON, default={}, nullable=False)
     
     # Subscription tracking
     subscribed_personalities = Column(JSON, default=["personal_friend", "discovery_mode"], nullable=False)
