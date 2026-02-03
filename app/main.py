@@ -127,10 +127,13 @@ app.include_router(voice.router, prefix=f"{settings.API_V1_PREFIX}/voice")
 app.include_router(memory.router)
 
 # Accountability Layer routers - Phase 2B
-from app.api import goals, habits, check_ins
+from app.api import goals, habits, check_ins, paddle
 app.include_router(goals.router, prefix=f"{settings.API_V1_PREFIX}/goals", tags=["Goals"])
 app.include_router(habits.router, prefix=f"{settings.API_V1_PREFIX}/habits", tags=["Habits"])
 app.include_router(check_ins.router, prefix=f"{settings.API_V1_PREFIX}/check-ins", tags=["Check-ins"])
+
+# Commercial MVP - Paddle Integration
+app.include_router(paddle.router, prefix=f"{settings.API_V1_PREFIX}", tags=["Paddle"])
 
 # Phase 4: CBT API endpoints
 if PHASE_4_API_AVAILABLE:

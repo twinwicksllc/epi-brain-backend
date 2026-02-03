@@ -7,7 +7,7 @@ from typing import Optional, List
 from datetime import datetime
 from uuid import UUID
 
-from app.models.user import UserTier, VoicePreference
+from app.models.user import UserTier, VoicePreference, PlanTier
 
 
 class UserBase(BaseModel):
@@ -42,6 +42,11 @@ class UserResponse(UserBase):
     """Schema for user response"""
     id: UUID
     tier: UserTier
+    plan_tier: PlanTier = PlanTier.FREE  # Commercial MVP
+    paddle_subscription_id: Optional[str] = None  # Commercial MVP
+    is_senior: bool = False  # Commercial MVP
+    is_military: bool = False  # Commercial MVP
+    is_firstresponder: bool = False  # Commercial MVP
     voice_preference: VoicePreference
     primary_mode: str
     silo_id: Optional[str] = None

@@ -148,6 +148,16 @@ class Settings(BaseSettings):
     VOICE_PRO_LIMIT: int = 50  # PRO users get 50 messages per day
     VOICE_ADMIN_LIMIT: int = 999999  # Admin unlimited access
     VOICE_ALERT_THRESHOLD: float = 0.8  # Alert when 80% of limit reached
+    VOICE_PREMIUM_LIMIT: int = 999999  # Unlimited for premium (Commercial MVP)
+    VOICE_ENTERPRISE_LIMIT: int = 999999  # Unlimited for enterprise (Commercial MVP)
+    
+    # Paddle Integration (Commercial MVP)
+    PADDLE_VENDOR_ID: str = os.getenv("PADDLE_VENDOR_ID", "")
+    PADDLE_API_KEY: str = os.getenv("PADDLE_API_KEY", "")
+    PADDLE_WEBHOOK_SECRET: str = os.getenv("PADDLE_WEBHOOK_SECRET", "")
+    PADDLE_PLAN_ID_PREMIUM: str = os.getenv("PADDLE_PLAN_ID_PREMIUM", "")
+    PADDLE_PLAN_ID_ENTERPRISE: str = os.getenv("PADDLE_PLAN_ID_ENTERPRISE", "")
+    PADDLE_ENVIRONMENT: str = os.getenv("PADDLE_ENVIRONMENT", "sandbox")
     
     # CORS Origins List
     @property
