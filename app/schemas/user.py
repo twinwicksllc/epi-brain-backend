@@ -76,6 +76,9 @@ class Token(BaseModel):
     refresh_token: str
     token_type: str = "bearer"
     user: Optional[UserResponse] = None
+    
+    class Config:
+        from_attributes = True
 
 
 class TokenData(BaseModel):

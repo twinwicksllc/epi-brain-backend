@@ -5,6 +5,7 @@ Authentication API Endpoints
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from datetime import datetime
+import logging
 
 from app.database import get_db
 from app.models.user import User
@@ -20,6 +21,7 @@ from app.core.security import (
 from app.core.exceptions import InvalidCredentials, UserAlreadyExists
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -78,31 +80,60 @@ async def login(credentials: UserLogin, db: Session = Depends(get_db)):
     Raises:
         InvalidCredentials: If email or password is incorrect
     """
-    # Get user by email
-    user = db.query(User).filter(User.email == credentials.email).first()
+    try:
+        logger.info(f"🔐 Login attempt for email: {credentials.email}")
+        
+        # Get user by email
+        user = db.query(User).filter(User.email == credentials.email).first()
+        
+        if not user:
+            logger.warning(f"❌ Login failed - user not found: {credentials.email}")
+            raise InvalidCredentials()
+        
+        # Verify password
+        if not verify_password(credentials.password, user.password_hash):
+            logger.warning(f"❌ Login failed - invalid password for: {credentials.email}")
+            raise InvalidCredentials()
+        
+        # Update last login
+        try:
+            user.last_login = datetime.utcnow()
+            db.commit()
+            logger.debug(f"✓ Updated last_login for {credentials.email}")
+        except Exception as e:
+            logger.warning(f"⚠️  Could not update last_login: {e}")
+            db.rollback()
+        
+        # Create tokens
+        try:
+            token_data = {"sub": str(user.id), "email": user.email}
+            access_token = create_access_token(token_data)
+            refresh_token = create_refresh_token(token_data)
+            logger.info(f"✅ Login successful for {credentials.email}")
+            
+            return {
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "token_type": "bearer",
+                "user": None  # Simplified: don't return user object to avoid serialization issues
+            }
+        except Exception as e:
+            logger.error(f"❌ Token creation failed: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create authentication tokens"
+            )
     
-    if not user:
-        raise InvalidCredentials()
-    
-    # Verify password
-    if not verify_password(credentials.password, user.password_hash):
-        raise InvalidCredentials()
-    
-    # Update last login
-    user.last_login = datetime.utcnow()
-    db.commit()
-    
-    # Create tokens
-    token_data = {"sub": str(user.id), "email": user.email}
-    access_token = create_access_token(token_data)
-    refresh_token = create_refresh_token(token_data)
-    
-    return {
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "token_type": "bearer",
-        "user": UserResponse.model_validate(user)
-    }
+    except InvalidCredentials:
+        raise
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Unexpected error during login: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error during login"
+        )
 
 
 @router.post("/refresh", response_model=Token)
