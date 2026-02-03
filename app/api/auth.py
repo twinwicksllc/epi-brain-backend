@@ -109,19 +109,33 @@ async def login(credentials: UserLogin, db: Session = Depends(get_db)):
             token_data = {"sub": str(user.id), "email": user.email}
             access_token = create_access_token(token_data)
             refresh_token = create_refresh_token(token_data)
+            logger.info(f"✅ Tokens created for {credentials.email}")
+        except Exception as e:
+            logger.error(f"❌ Token creation failed: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create authentication tokens"
+            )
+        
+        # Serialize user object for response
+        try:
+            logger.debug(f"🔍 Serializing user object for {credentials.email}")
+            logger.debug(f"🔍 User fields: id={user.id}, tier={user.tier}, plan_tier={user.plan_tier}, voice_preference={user.voice_preference}")
+            user_response = UserResponse.model_validate(user)
             logger.info(f"✅ Login successful for {credentials.email}")
             
             return {
                 "access_token": access_token,
                 "refresh_token": refresh_token,
                 "token_type": "bearer",
-                "user": UserResponse.model_validate(user)
+                "user": user_response
             }
         except Exception as e:
-            logger.error(f"❌ Token creation failed: {e}", exc_info=True)
+            logger.error(f"❌ User serialization failed: {e}", exc_info=True)
+            logger.error(f"❌ User object dict: {user.__dict__}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to create authentication tokens"
+                detail=f"Failed to serialize user data: {str(e)}"
             )
     
     except InvalidCredentials:
