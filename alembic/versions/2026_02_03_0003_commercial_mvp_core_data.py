@@ -52,7 +52,7 @@ def upgrade() -> None:
         sa.Column('response_time_ms', sa.Integer(), nullable=True),
         sa.Column('success', sa.Boolean(), nullable=False, server_default='true'),
         sa.Column('error_message', sa.Text(), nullable=True),
-        sa.Column('metadata', postgresql.JSON(), nullable=False, server_default='{}'),
+        sa.Column('chat_metadata', postgresql.JSON(), nullable=False, server_default='{}'),
         sa.Column('created_at', sa.DateTime(), nullable=False, server_default=sa.func.now()),
         sa.PrimaryKeyConstraint('id')
     )

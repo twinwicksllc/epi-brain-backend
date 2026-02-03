@@ -45,7 +45,7 @@ class UsageLog(Base):
     error_message = Column(Text, nullable=True)  # Error details if failed
     
     # Additional Context
-    metadata = Column(JSON, default={}, nullable=False)  # Store extra info (e.g., features used)
+    chat_metadata = Column(JSON, default={}, nullable=False)  # Store extra info (e.g., features used)
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)

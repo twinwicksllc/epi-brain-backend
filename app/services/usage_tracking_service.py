@@ -34,8 +34,8 @@ class UsageTrackingService:
         response_time_ms: Optional[int] = None,
         success: bool = True,
         error_message: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
-    ) -> UsageLog:
+            chat_metadata: Optional[Dict[str, Any]] = None
+        ) -> UsageLog:
         """
         Log a chat message usage event
         
@@ -51,9 +51,7 @@ class UsageTrackingService:
             response_time_ms: Response time in ms
             success: Whether request succeeded
             error_message: Error details if failed
-            metadata: Additional context
-            
-        Returns:
+            chat_metadata: Additional context
             Created UsageLog entry
         """
         try:
@@ -85,7 +83,7 @@ class UsageTrackingService:
                 response_time_ms=response_time_ms,
                 success=success,
                 error_message=error_message,
-                metadata=metadata or {}
+                chat_metadata=chat_metadata or {}
             )
             
             self.db.add(usage_log)
