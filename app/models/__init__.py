@@ -12,6 +12,7 @@ from app.models.habit import Habit, HabitCompletion
 from app.models.thought_record import ThoughtRecord, CognitiveDistortionType
 from app.models.behavioral_activation import BehavioralActivation, ActivityCompletionStatus
 from app.models.exposure_hierarchy import ExposureHierarchy, ExposureStatus
+from app.models.user_note import UserNote
 
 __all__ = [
     "User",
@@ -31,4 +32,5 @@ __all__ = [
     "ActivityCompletionStatus",
     "ExposureHierarchy",
     "ExposureStatus",
+    "UserNote",
 ]

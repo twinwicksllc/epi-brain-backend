@@ -159,6 +159,19 @@ class Settings(BaseSettings):
     PADDLE_PLAN_ID_ENTERPRISE: str = os.getenv("PADDLE_PLAN_ID_ENTERPRISE", "")
     PADDLE_ENVIRONMENT: str = os.getenv("PADDLE_ENVIRONMENT", "sandbox")
     
+    # Email Configuration (Pocket EPI MVP - Internal Messaging)
+    SMTP_HOST: str = os.getenv("SMTP_HOST", "smtp.gmail.com")
+    SMTP_PORT: int = int(os.getenv("SMTP_PORT", "587"))
+    SMTP_USER: str = os.getenv("SMTP_USER", "")
+    SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
+    SMTP_FROM_EMAIL: str = os.getenv("SMTP_FROM_EMAIL", "")
+    SMTP_FROM_NAME: str = os.getenv("SMTP_FROM_NAME", "EPI Assistant")
+    
+    # Internal Team Email Addresses (Pocket EPI MVP)
+    EMAIL_TOM: str = os.getenv("EMAIL_TOM", "")
+    EMAIL_DARRICK: str = os.getenv("EMAIL_DARRICK", "")
+    EMAIL_TWINWICKS: str = os.getenv("EMAIL_TWINWICKS", "")
+    
     # CORS Origins List
     @property
     def cors_origins_list(self) -> list:
