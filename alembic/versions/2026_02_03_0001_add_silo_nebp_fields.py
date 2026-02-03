@@ -1,6 +1,6 @@
 """Add silo_id and NEBP tracking fields to users
 
-Revision ID: b8a1c2d3e4f5
+Revision ID: 2026_02_03_0001
 Revises: 79010fc92133
 Create Date: 2026-02-03 00:01:00.000000
 
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = 'b8a1c2d3e4f5'
+revision = '2026_02_03_0001'
 down_revision = '79010fc92133'
 branch_labels = None
 depends_on = None
