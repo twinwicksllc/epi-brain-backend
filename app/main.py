@@ -41,14 +41,18 @@ is_production = (
 )
 
 # Determine allowed origins
+# Always include the main frontend domains regardless of environment
+base_allowed_origins = [
+    "https://epibraingenius.com",
+    "https://www.epibraingenius.com",
+    "https://api.epibraingenius.com",
+    "https://improved-broccoli-4qqj59q7gjx276p4.github.dev",  # Codespace for testing
+]
+
 if is_production:
-    # Production: Only allow specific frontend domains
-    allowed_origins = [
-        "https://epibraingenius.com",
-        "https://www.epibraingenius.com",
-        "https://improved-broccoli-4qqj59q7gjx276p4.github.dev",  # Codespace for testing
-    ]
-    # Allow CORS_ORIGINS env var to override
+    # Production: Use specific frontend domains
+    allowed_origins = base_allowed_origins
+    # Allow CORS_ORIGINS env var to override if explicitly set
     if settings.CORS_ORIGINS and settings.CORS_ORIGINS != "*":
         allowed_origins = settings.cors_origins_list
     
@@ -62,13 +66,15 @@ if is_production:
         "Origin",
         "Referer",
         "User-Agent",
+        "X-Requested-With",
     ]
     allow_credentials_value = True
-    print(f"🌐 CORS: Production mode detected - allowing origins: {allowed_origins}")
+    logger.info(f"🌐 CORS: Production mode detected")
+    logger.info(f"   Allowed origins: {allowed_origins}")
 else:
-    # Development: Allow all origins for testing
+    # Development: Allow all origins for testing (but log the attempt)
     allowed_origins = ["*"]
-    print(f"🔧 CORS: Development mode - allowing all origins")
+    logger.info(f"🔧 CORS: Development mode - allowing all origins")
     allowed_headers = ["*"]
     allow_credentials_value = False
 
