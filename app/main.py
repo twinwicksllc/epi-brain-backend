@@ -46,6 +46,7 @@ if is_production:
     allowed_origins = [
         "https://epibraingenius.com",
         "https://www.epibraingenius.com",
+        "https://improved-broccoli-4qqj59q7gjx276p4.github.dev",  # Codespace for testing
     ]
     # Allow CORS_ORIGINS env var to override
     if settings.CORS_ORIGINS and settings.CORS_ORIGINS != "*":
