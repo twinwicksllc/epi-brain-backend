@@ -34,7 +34,7 @@ class GroqService:
             return settings.GROQ_MODEL_MAP_FREE.get(mode, settings.GROQ_MODEL_FREE_DEFAULT or settings.GROQ_MODEL)
 
         # Paid/pro/enterprise tiers
-        if tier in ("pro", "enterprise", "paid"):
+        if tier in ("pro", "enterprise", "paid", "premium"):
             return settings.GROQ_MODEL_MAP_PAID.get(mode, settings.GROQ_MODEL_PAID_DEFAULT or settings.GROQ_MODEL)
 
         # Default fallback

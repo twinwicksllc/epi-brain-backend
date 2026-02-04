@@ -119,6 +119,29 @@ STRIKE_WEIGHTS = {
     "clear_non_engagement": 3 # Clearly wasting time or spam
 }
 
+
+def _resolve_user_tier(user: Optional[User]) -> Optional[str]:
+    """
+    Resolve the most accurate tier string for model selection.
+    Prefers plan_tier (Commercial MVP) and falls back to legacy tier.
+    """
+    if not user:
+        return None
+
+    plan_tier = getattr(user, "plan_tier", None)
+    if plan_tier:
+        value = getattr(plan_tier, "value", None) or str(plan_tier)
+        if value:
+            return value.lower()
+
+    legacy_tier = getattr(user, "tier", None)
+    if legacy_tier:
+        value = getattr(legacy_tier, "value", None) or str(legacy_tier)
+        if value:
+            return value.lower()
+
+    return None
+
 def _validate_extracted_name(name: str) -> bool:
     """
     Validate that extracted name meets reasonable constraints.
@@ -503,6 +526,13 @@ async def send_message(
     if not silo_id and current_user:
         silo_id = getattr(current_user, "silo_id", None)
 
+    # Entry point tagging for homepage quick starts
+    entry_point = (chat_request.entry_point or "").strip() or None
+    if chat_request.is_homepage_session and not entry_point:
+        entry_point = "homepage_quickstart"
+    if entry_point:
+        entry_point = entry_point[:100]
+
     # For discovery mode, check if user is authenticated
     # If not authenticated, skip user-specific checks
     if not discovery_mode_requested:
@@ -648,6 +678,14 @@ async def send_message(
             )
             db.add(conversation)
             db.flush()
+
+    # Tag conversation entry point for dashboard analytics
+    if conversation and entry_point:
+        if not conversation.session_memory:
+            conversation.session_memory = {}
+        conversation.session_memory["entry_point"] = entry_point
+        conversation.session_memory["is_homepage_session"] = chat_request.is_homepage_session
+        db.flush()
     
     # DISCOVERY FAILSAFE: Check engagement and strike counter with refined logic
     discovery_failsafe_triggered = False
@@ -836,7 +874,7 @@ async def send_message(
             logger.info(f"Scoring depth for conversation {conversation.id}, mode {chat_request.mode}")
             scoring_result = await depth_scorer.score_turn(
                 user_message=chat_request.message,
-                user_tier=current_user.tier.value if hasattr(current_user, "tier") else None
+                user_tier=_resolve_user_tier(current_user)
             )
             turn_score = scoring_result['score']
             
@@ -1151,7 +1189,7 @@ async def send_message(
                 message=chat_request.message,
                 mode=chat_request.mode,
                 conversation_history=conversation_history,
-                user_tier=current_user.tier.value if current_user and hasattr(current_user, "tier") else None,
+                user_tier=_resolve_user_tier(current_user),
                 memory_context=combined_memory_context,  # Pass combined memory context to AI service
                 accountability_style=accountability_style,  # Phase 3: Pass accountability style
                 conversation_depth=new_depth if new_depth else None,  # Phase 3: Pass conversation depth
@@ -1330,6 +1368,13 @@ async def send_message(
         if discovery_mode_requested:
             captured_fields = {k: v for k, v in discovery_metadata.items() if v}
             metadata_response = captured_fields if captured_fields else None
+
+        if entry_point:
+            metadata_response = metadata_response or {}
+            metadata_response["entry_point"] = entry_point
+        if chat_request.is_homepage_session:
+            metadata_response = metadata_response or {}
+            metadata_response["is_homepage_session"] = "true"
 
         # Return response - handle both authenticated and unauthenticated users
         if current_user and conversation and ai_message:
@@ -1569,7 +1614,7 @@ async def stream_message(
             logger.info(f"Scoring depth for streaming conversation {conversation.id}")
             scoring_result = await depth_scorer.score_turn(
                 user_message=chat_request.message,
-                user_tier=current_user.tier.value if hasattr(current_user, "tier") else None
+                user_tier=_resolve_user_tier(current_user)
             )
             turn_score = scoring_result['score']
             
@@ -1647,7 +1692,7 @@ async def stream_message(
                     message=chat_request.message,
                     mode=chat_request.mode,
                     conversation_history=conversation_history,
-                    user_tier=current_user.tier.value if hasattr(current_user, "tier") else None,
+                    user_tier=_resolve_user_tier(current_user),
                     accountability_style=accountability_style,  # Phase 3: Pass accountability style
                     conversation_depth=new_depth if new_depth else None,  # Phase 3: Pass conversation depth
                     silo_id=silo_id

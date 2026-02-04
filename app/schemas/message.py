@@ -40,6 +40,15 @@ class ChatRequest(BaseModel):
     mode: str = Field(default=DISCOVERY_MODE_ID, description="Personality mode")
     stream: bool = Field(default=False, description="Enable streaming response")
     metadata: Optional[Dict[str, str]] = None
+    entry_point: Optional[str] = Field(
+        default=None,
+        description="Source entry point for the conversation (e.g., homepage_quickstart)",
+        max_length=100
+    )
+    is_homepage_session: bool = Field(
+        default=False,
+        description="Flag indicating the chat was started from the homepage quick start"
+    )
 
 
 class ChatResponse(BaseModel):
