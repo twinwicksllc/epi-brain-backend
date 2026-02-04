@@ -93,6 +93,9 @@ except ImportError as e:
 
 router = APIRouter()
 
+# The homepage quick start always uses the core EPI Brain personality
+HOMEPAGE_DEFAULT_PERSONALITY = "personal_friend"
+
 # Initialize depth scorer
 depth_scorer = DepthScorer()
 
@@ -602,11 +605,15 @@ async def send_message(
             )
 
     # Check personality access (discovery mode is always available)
-    if not discovery_mode_requested and current_user and mode not in current_user.subscribed_personalities:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You are not subscribed to this personality."
+    if not discovery_mode_requested and current_user:
+        homepage_personality_access = (
+            chat_request.is_homepage_session and mode == HOMEPAGE_DEFAULT_PERSONALITY
         )
+        if not homepage_personality_access and mode not in current_user.subscribed_personalities:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You are not subscribed to this personality."
+            )
 
     discovery_metadata = {"captured_name": None, "captured_intent": None}
     discovery_context_block = None
