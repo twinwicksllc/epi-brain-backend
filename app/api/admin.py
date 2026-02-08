@@ -41,8 +41,8 @@ class CleanupResponse(BaseModel):
 
 class UserUsageStats(BaseModel):
     """User usage statistics for admin reporting"""
-    user_id: str
-    email: str
+    user_id: Optional[str] = None
+    email: Optional[str] = None
     plan_tier: Optional[PlanTier] = PlanTier.FREE
     last_login: Optional[datetime] = None
     total_tokens_month: Optional[int] = Field(default=0, description="Total tokens consumed this month")
@@ -50,8 +50,11 @@ class UserUsageStats(BaseModel):
     total_cost_month: Optional[float] = Field(default=0.0, description="Total cost this month in USD")
     voice_used_month: Optional[int] = Field(default=0, description="Voice interactions used this month")
     voice_limit: Optional[int] = Field(default=None, description="Voice daily limit (None = unlimited)")
-    is_admin: Optional[bool] = False
+    is_admin: Optional[bool] = Field(default=False, description="Is user an admin")
     created_at: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True
 
 
 class AdminUsageResponse(BaseModel):
@@ -60,8 +63,11 @@ class AdminUsageResponse(BaseModel):
     period_start: datetime
     period_end: datetime
     total_users: int
-    users: List[UserUsageStats]
+    users: List[UserUsageStats] = Field(default_factory=list, description="List of user usage stats")
     summary: dict = Field(default_factory=dict, description="Aggregate statistics")
+    
+    class Config:
+        from_attributes = True
 
 
 @router.post("/users/{user_id}/upgrade-tier", response_model=UserResponse)
@@ -521,9 +527,9 @@ async def get_usage_report(
         
         for row in results:
             user = row[0]
-            total_tokens = int(row[1])
-            total_messages = int(row[2])
-            total_cost = float(row[3])
+            total_tokens = int(row[1]) if row[1] is not None else 0
+            total_messages = int(row[2]) if row[2] is not None else 0
+            total_cost = float(row[3]) if row[3] is not None else 0.0
             
             # Aggregate for summary
             total_tokens_all += total_tokens
@@ -531,17 +537,33 @@ async def get_usage_report(
             total_cost_all += total_cost
             total_voice_all += user.voice_used or 0
             
+            # Safely convert plan_tier to ensure it's a valid enum value
+            plan_tier_value = user.plan_tier
+            if plan_tier_value is None:
+                plan_tier_value = PlanTier.FREE
+            
+            # Safely convert is_admin boolean
+            is_admin_value = False
+            if user.is_admin:
+                is_admin_value = str(user.is_admin).lower() == "true"
+            
+            # Get voice limit (handle errors gracefully)
+            try:
+                voice_limit_value = user.get_voice_daily_limit()
+            except Exception as e:
+                voice_limit_value = None
+            
             user_stats = UserUsageStats(
-                user_id=str(user.id),
-                email=user.email,
-                plan_tier=user.plan_tier,
+                user_id=str(user.id) if user.id else None,
+                email=user.email if user.email else None,
+                plan_tier=plan_tier_value,
                 last_login=user.last_login,
                 total_tokens_month=total_tokens,
                 total_messages_month=total_messages,
                 total_cost_month=round(total_cost, 4),
                 voice_used_month=user.voice_used or 0,
-                voice_limit=user.get_voice_daily_limit(),
-                is_admin=(user.is_admin == "true") if user.is_admin else False,
+                voice_limit=voice_limit_value,
+                is_admin=is_admin_value,
                 created_at=user.created_at
             )
             user_stats_list.append(user_stats)
@@ -648,26 +670,42 @@ async def get_usage_report_alias(
         
         for row in results:
             user = row[0]
-            total_tokens = int(row[1])
-            total_messages = int(row[2])
-            total_cost = float(row[3])
+            total_tokens = int(row[1]) if row[1] is not None else 0
+            total_messages = int(row[2]) if row[2] is not None else 0
+            total_cost = float(row[3]) if row[3] is not None else 0.0
             
             total_tokens_all += total_tokens
             total_messages_all += total_messages
             total_cost_all += total_cost
             total_voice_all += user.voice_used or 0
             
+            # Safely convert plan_tier to ensure it's a valid enum value
+            plan_tier_value = user.plan_tier
+            if plan_tier_value is None:
+                plan_tier_value = PlanTier.FREE
+            
+            # Safely convert is_admin boolean
+            is_admin_value = False
+            if user.is_admin:
+                is_admin_value = str(user.is_admin).lower() == "true"
+            
+            # Get voice limit (handle errors gracefully)
+            try:
+                voice_limit_value = user.get_voice_daily_limit()
+            except Exception as e:
+                voice_limit_value = None
+            
             user_stats = UserUsageStats(
-                user_id=str(user.id),
-                email=user.email,
-                plan_tier=user.plan_tier,
+                user_id=str(user.id) if user.id else None,
+                email=user.email if user.email else None,
+                plan_tier=plan_tier_value,
                 last_login=user.last_login,
                 total_tokens_month=total_tokens,
                 total_messages_month=total_messages,
                 total_cost_month=round(total_cost, 4),
                 voice_used_month=user.voice_used or 0,
-                voice_limit=user.get_voice_daily_limit(),
-                is_admin=(user.is_admin == "true") if user.is_admin else False,
+                voice_limit=voice_limit_value,
+                is_admin=is_admin_value,
                 created_at=user.created_at
             )
             user_stats_list.append(user_stats)
