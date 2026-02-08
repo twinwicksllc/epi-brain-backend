@@ -40,48 +40,37 @@ is_production = (
     "render" in str(settings.DATABASE_URL).lower()
 )
 
-# Determine allowed origins
-# Always include the main frontend domains regardless of environment
-base_allowed_origins = [
+# Always use explicit allowed origins - no environment-dependent logic
+allowed_origins = [
     "https://epibraingenius.com",
     "https://www.epibraingenius.com",
     "https://api.epibraingenius.com",
     "https://improved-broccoli-4qqj59q7gjx276p4.github.dev",  # Codespace for testing
 ]
 
-if is_production:
-    # Production: Use specific frontend domains (no trailing slashes)
-    allowed_origins = [
-        "https://epibraingenius.com",
-        "https://www.epibraingenius.com",
-        "https://api.epibraingenius.com"
-    ]
-    # Allow CORS_ORIGINS env var to override if explicitly set
-    if settings.CORS_ORIGINS and settings.CORS_ORIGINS != "*":
-        allowed_origins = settings.cors_origins_list
-    
-    # Explicitly allow common headers including Authorization
-    allowed_headers = [
-        "Accept",
-        "Accept-Language",
-        "Content-Language",
-        "Content-Type",
-        "Authorization",
-        "Origin",
-        "Referer",
-        "User-Agent",
-        "X-Requested-With",
-    ]
-    allow_credentials_value = True
-    logger.info(f"🌐 CORS: Production mode detected")
-    logger.info(f"   Allowed origins: {allowed_origins}")
-    logger.info(f"   Environment detected as production: ENVIRONMENT={settings.ENVIRONMENT}")
-else:
-    # Development: Allow all origins for testing (but log the attempt)
-    allowed_origins = ["*"]
-    logger.info(f"🔧 CORS: Development mode - allowing all origins")
-    allowed_headers = ["*"]
-    allow_credentials_value = False
+# Allow CORS_ORIGINS env var to override if explicitly set
+if settings.CORS_ORIGINS and settings.CORS_ORIGINS != "*":
+    allowed_origins = settings.cors_origins_list
+    logger.info(f"🌐 CORS: Using environment variable override: {allowed_origins}")
+
+# Explicitly allow common headers including Authorization
+allowed_headers = [
+    "Accept",
+    "Accept-Language",
+    "Content-Language",
+    "Content-Type",
+    "Authorization",
+    "Origin",
+    "Referer",
+    "User-Agent",
+    "X-Requested-With",
+]
+
+allow_credentials_value = True
+logger.info(f"🌐 CORS Configuration:")
+logger.info(f"   Environment: {settings.ENVIRONMENT}")
+logger.info(f"   Production detected: {is_production}")
+logger.info(f"   Allowed origins: {allowed_origins}")
 
 app.add_middleware(
     CORSMiddleware,
