@@ -17,7 +17,7 @@ from app.models.conversation import Conversation
 from app.models.message import Message, MessageRole
 from app.schemas.conversation import ConversationResponse, ConversationCreate, ConversationWithMessages
 from app.schemas.message import ChatRequest, ChatResponse, MessageResponse
-from app.core.dependencies import get_current_active_user, get_current_user_optional, get_current_active_user_optional, check_message_limit
+from app.core.dependencies import get_current_active_user, get_current_user_optional_from_request, get_current_active_user_optional, check_message_limit
 from app.core.exceptions import ConversationNotFound, UnauthorizedAccess, MessageLimitExceeded
 from app.core.rate_limiter import check_rate_limit, get_rate_limit_info, get_discovery_context, update_discovery_context
 from app.services.claude import ClaudeService
@@ -495,7 +495,7 @@ def _build_discovery_context(
 async def send_message(
     chat_request: ChatRequest,
     request: Request,
-    current_user: Optional[User] = Depends(get_current_user_optional),
+    current_user: Optional[User] = Depends(get_current_user_optional_from_request),
     db: Session = Depends(get_db)
 ):
     """

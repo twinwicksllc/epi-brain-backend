@@ -2,7 +2,7 @@
 FastAPI Dependencies
 """
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from typing import Optional
@@ -102,6 +102,53 @@ async def get_current_user_optional(
     try:
         # Extract token from credentials
         token = credentials.credentials
+        
+        # Verify and decode token
+        payload = verify_token(token, token_type="access")
+        
+        if payload is None:
+            return None
+        
+        # Extract user_id from payload
+        user_id: Optional[str] = payload.get("sub")
+        
+        if user_id is None:
+            return None
+        
+        # Get user from database
+        user = db.query(User).filter(User.id == UUID(user_id)).first()
+        
+        return user
+    except Exception:
+        # Return None for any authentication errors
+        return None
+
+
+async def get_current_user_optional_from_request(
+    request: Request,
+    db: Session = Depends(get_db)
+) -> Optional[User]:
+    """
+    Alternative optional dependency that reads auth header directly from request
+    This bypasses HTTPBearer and its potential issues
+    Returns None if no valid token is provided (for unauthenticated access)
+    
+    Args:
+        request: FastAPI request object
+        db: Database session
+        
+    Returns:
+        Current user object or None if not authenticated
+    """
+    # Get Authorization header
+    auth_header = request.headers.get("authorization", "").lower()
+    
+    if not auth_header or not auth_header.startswith("bearer "):
+        return None
+    
+    try:
+        # Extract token from "Bearer <token>"
+        token = auth_header[7:]  # Remove "bearer " prefix
         
         # Verify and decode token
         payload = verify_token(token, token_type="access")
