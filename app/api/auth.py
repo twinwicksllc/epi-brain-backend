@@ -92,6 +92,18 @@ async def login(credentials: UserLogin, db: Session = Depends(get_db)):
             logger.warning(f"❌ Login failed - user not found: {credentials.email}")
             raise InvalidCredentials()
         
+        # Ensure new fields exist for backward compatibility with legacy users
+        if not hasattr(user, 'first_name'):
+            user.first_name = None
+        if not hasattr(user, 'full_name'):
+            user.full_name = None
+        
+        # Ensure required fields have values for legacy users
+        if not hasattr(user, 'first_name') or user.first_name is None:
+            user.first_name = None  # Allow None for optional field
+        if not hasattr(user, 'full_name') or user.full_name is None:
+            user.full_name = None  # Allow None for optional field
+        
         # Verify password
         if not verify_password(credentials.password, user.password_hash):
             logger.warning(f"❌ Login failed - invalid password for: {credentials.email}")
@@ -122,6 +134,15 @@ async def login(credentials: UserLogin, db: Session = Depends(get_db)):
         # Serialize user object for response
         try:
             logger.debug(f"🔍 Serializing user object for {credentials.email}")
+            
+            # Ensure first_name and full_name attributes exist (backward compatibility)
+            if not hasattr(user, 'first_name'):
+                user.first_name = None
+            if not hasattr(user, 'full_name'):
+                user.full_name = None
+            
+            logger.debug(f"🔍 User first_name: {getattr(user, 'first_name', 'MISSING')}")
+            logger.debug(f"🔍 User full_name: {getattr(user, 'full_name', 'MISSING')}")
             
             # Use model_validate with from_attributes for Pydantic v2
             user_response = UserResponse.model_validate(user, from_attributes=True, context={"extra": "ignore"})

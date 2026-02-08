@@ -19,23 +19,22 @@ depends_on = None
 
 def upgrade():
     # Add depth tracking columns to conversations table
-    op.add_column('conversations', 
-        sa.Column('depth', sa.Float(), nullable=False, server_default='0.0')
-    )
-    op.add_column('conversations',
-        sa.Column('last_depth_update', sa.DateTime(), nullable=False, server_default=sa.func.now())
-    )
-    op.add_column('conversations',
-        sa.Column('depth_enabled', sa.Boolean(), nullable=False, server_default='true')
-    )
+    # Use execute with IF NOT EXISTS to handle idempotency
+    try:
+        op.execute("ALTER TABLE conversations ADD COLUMN IF NOT EXISTS depth FLOAT NOT NULL DEFAULT 0.0")
+        op.execute("ALTER TABLE conversations ADD COLUMN IF NOT EXISTS last_depth_update TIMESTAMP NOT NULL DEFAULT now()")
+        op.execute("ALTER TABLE conversations ADD COLUMN IF NOT EXISTS depth_enabled BOOLEAN NOT NULL DEFAULT true")
+    except:
+        # Columns might already exist, continue
+        pass
     
     # Add turn score columns to messages table (for analytics/debugging)
-    op.add_column('messages',
-        sa.Column('turn_score', sa.Float(), nullable=True)
-    )
-    op.add_column('messages',
-        sa.Column('scoring_source', sa.String(20), nullable=True)
-    )
+    try:
+        op.execute("ALTER TABLE messages ADD COLUMN IF NOT EXISTS turn_score FLOAT")
+        op.execute("ALTER TABLE messages ADD COLUMN IF NOT EXISTS scoring_source VARCHAR(20)")
+    except:
+        # Columns might already exist, continue
+        pass
 
 
 def downgrade():
