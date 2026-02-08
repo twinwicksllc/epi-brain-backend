@@ -42,6 +42,10 @@ class User(Base):
     email = Column(String(255), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
     
+    # User profile
+    first_name = Column(String(100), nullable=True)
+    full_name = Column(String(255), nullable=True)
+    
     # Subscription
     tier = Column(SQLEnum(UserTier), default=UserTier.FREE, nullable=False)
     stripe_customer_id = Column(String(255), unique=True, nullable=True)

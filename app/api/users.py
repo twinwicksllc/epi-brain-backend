@@ -68,6 +68,13 @@ async def update_user_profile(
     Returns:
         Updated user profile
     """
+    # Update user name fields
+    if user_update.first_name is not None:
+        current_user.first_name = user_update.first_name
+    
+    if user_update.full_name is not None:
+        current_user.full_name = user_update.full_name
+    
     # Update user fields
     if user_update.voice_preference is not None:
         current_user.voice_preference = user_update.voice_preference
@@ -94,6 +101,9 @@ async def update_user_profile(
     
     if user_update.depth_sensitivity_enabled is not None:
         current_user.depth_sensitivity_enabled = user_update.depth_sensitivity_enabled
+    
+    if user_update.silo_id is not None:
+        current_user.silo_id = user_update.silo_id
     
     db.commit()
     db.refresh(current_user)

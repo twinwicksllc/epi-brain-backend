@@ -18,6 +18,8 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     """Schema for user registration"""
     password: str = Field(..., min_length=8, max_length=100)
+    first_name: Optional[str] = Field(default=None, max_length=100)
+    full_name: Optional[str] = Field(default=None, max_length=255)
     voice_preference: Optional[VoicePreference] = VoicePreference.NONE
     silo_id: Optional[str] = Field(default=None, max_length=50)
 
@@ -30,6 +32,8 @@ class UserLogin(BaseModel):
 
 class UserUpdate(BaseModel):
     """Schema for updating user profile"""
+    first_name: Optional[str] = Field(default=None, max_length=100)
+    full_name: Optional[str] = Field(default=None, max_length=255)
     voice_preference: Optional[VoicePreference] = None
     primary_mode: Optional[str] = None
     accountability_style: Optional[str] = None  # Phase 3: tactical, grace, analyst, adaptive
@@ -41,6 +45,8 @@ class UserUpdate(BaseModel):
 class UserResponse(UserBase):
     """Schema for user response"""
     id: UUID
+    first_name: Optional[str] = None
+    full_name: Optional[str] = None
     tier: UserTier
     plan_tier: PlanTier = PlanTier.FREE  # Commercial MVP
     paddle_subscription_id: Optional[str] = None  # Commercial MVP

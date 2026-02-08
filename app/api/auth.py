@@ -49,6 +49,8 @@ async def register(user_data: UserCreate, db: Session = Depends(get_db)):
     new_user = User(
         email=user_data.email,
         password_hash=get_password_hash(user_data.password),
+        first_name=user_data.first_name,
+        full_name=user_data.full_name,
         voice_preference=user_data.voice_preference,
         silo_id=user_data.silo_id,
     )
