@@ -171,6 +171,46 @@ async def get_current_user_optional_from_request(
         return None
 
 
+def get_optional_user_from_auth_header(auth_header: str, db: Session) -> Optional[User]:
+    """
+    Synchronous helper function to extract user from Authorization header
+    Returns None if no valid token is provided
+    
+    Args:
+        auth_header: Authorization header value
+        db: Database session
+        
+    Returns:
+        Current user object or None if not authenticated
+    """
+    if not auth_header or not auth_header.lower().startswith("bearer "):
+        return None
+    
+    try:
+        # Extract token from "Bearer <token>"
+        token = auth_header[7:]  # Remove "bearer " prefix
+        
+        # Verify and decode token
+        payload = verify_token(token, token_type="access")
+        
+        if payload is None:
+            return None
+        
+        # Extract user_id from payload
+        user_id: Optional[str] = payload.get("sub")
+        
+        if user_id is None:
+            return None
+        
+        # Get user from database
+        user = db.query(User).filter(User.id == UUID(user_id)).first()
+        
+        return user
+    except Exception:
+        # Return None for any authentication errors
+        return None
+
+
 async def get_current_active_user_optional(
     current_user: Optional[User] = Depends(get_current_user_optional)
 ) -> Optional[User]:

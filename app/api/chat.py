@@ -17,7 +17,7 @@ from app.models.conversation import Conversation
 from app.models.message import Message, MessageRole
 from app.schemas.conversation import ConversationResponse, ConversationCreate, ConversationWithMessages
 from app.schemas.message import ChatRequest, ChatResponse, MessageResponse
-from app.core.dependencies import get_current_active_user, get_current_user_optional_from_request, get_current_active_user_optional, check_message_limit
+from app.core.dependencies import get_current_active_user, get_optional_user_from_auth_header, get_current_active_user_optional, check_message_limit
 from app.core.exceptions import ConversationNotFound, UnauthorizedAccess, MessageLimitExceeded
 from app.core.rate_limiter import check_rate_limit, get_rate_limit_info, get_discovery_context, update_discovery_context
 from app.services.claude import ClaudeService
@@ -495,7 +495,6 @@ def _build_discovery_context(
 async def send_message(
     chat_request: ChatRequest,
     request: Request,
-    current_user: Optional[User] = Depends(get_current_user_optional_from_request),
     db: Session = Depends(get_db)
 ):
     """
@@ -505,12 +504,15 @@ async def send_message(
     Args:
         chat_request: Chat request with message and optional conversation_id
         request: FastAPI request object (for IP rate limiting)
-        current_user: Current authenticated user (optional, for discovery mode)
         db: Database session
         
     Returns:
         AI response with message details
     """
+    # Get user from Authorization header (optional, None if not authenticated)
+    auth_header = request.headers.get("authorization", "")
+    current_user = get_optional_user_from_auth_header(auth_header, db) if auth_header else None
+    
     mode = (chat_request.mode or "").strip()
     if not mode:
         mode = DISCOVERY_MODE_ID
