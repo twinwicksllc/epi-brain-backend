@@ -87,8 +87,24 @@ app.add_middleware(
 async def debug_cors(request: Request, call_next):
     response = await call_next(request)
     
+    # Explicitly add CORS headers as fallback
+    origin = request.headers.get("origin")
+    allowed_frontend_origins = [
+        "https://epibraingenius.com",
+        "https://www.epibraingenius.com",
+        "https://api.epibraingenius.com",
+        "https://improved-broccoli-4qqj59q7gjx276p4.github.dev",
+    ]
+    
+    if origin in allowed_frontend_origins:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+        response.headers["Access-Control-Allow-Headers"] = "Accept, Accept-Language, Content-Language, Content-Type, Authorization, Origin, Referer, User-Agent, X-Requested-With"
+        response.headers["Access-Control-Expose-Headers"] = "*"
+    
     # Add debug headers
-    response.headers["X-Debug-CORS-Origin"] = str(request.headers.get("origin"))
+    response.headers["X-Debug-CORS-Origin"] = str(origin)
     response.headers["X-Debug-CORS-Method"] = str(request.headers.get("access-control-request-method"))
     response.headers["X-Debug-Environment"] = str(settings.ENVIRONMENT)
     

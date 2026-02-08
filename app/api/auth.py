@@ -8,7 +8,7 @@ from datetime import datetime
 import logging
 
 from app.database import get_db
-from app.models.user import User
+from app.models.user import User, VoicePreference
 from app.schemas.user import UserCreate, UserLogin, UserResponse, Token
 from app.core.security import (
     verify_password,
@@ -123,6 +123,29 @@ async def login(credentials: UserLogin, db: Session = Depends(get_db)):
         try:
             logger.debug(f"🔍 Serializing user object for {credentials.email}")
             logger.debug(f"🔍 User fields: id={user.id}, tier={user.tier}, plan_tier={user.plan_tier}, voice_preference={user.voice_preference}")
+            
+            # Ensure all fields have values (defensive programming for legacy users)
+            if not user.voice_preference:
+                user.voice_preference = VoicePreference.NONE
+            if not user.primary_mode:
+                user.primary_mode = "personal_friend"
+            if not user.nebp_phase:
+                user.nebp_phase = "discovery"
+            if not user.message_count:
+                user.message_count = "0"
+            if not user.referral_credits:
+                user.referral_credits = "0"
+            if user.sentiment_override_enabled is None:
+                user.sentiment_override_enabled = True
+            if user.depth_sensitivity_enabled is None:
+                user.depth_sensitivity_enabled = True
+            if not user.accountability_style:
+                user.accountability_style = "adaptive"
+            if not user.global_memory:
+                user.global_memory = {}
+            if not user.subscribed_personalities:
+                user.subscribed_personalities = ["personal_friend", "discovery_mode"]
+            
             user_response = UserResponse.model_validate(user)
             logger.info(f"✅ Login successful for {credentials.email}")
             
