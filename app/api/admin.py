@@ -43,16 +43,15 @@ class UserUsageStats(BaseModel):
     """User usage statistics for admin reporting"""
     user_id: str
     email: str
-    plan_tier: PlanTier
+    plan_tier: Optional[PlanTier] = PlanTier.FREE
     last_login: Optional[datetime] = None
-    total_tokens_month: int = Field(default=0, description="Total tokens consumed this month")
-    total_messages_month: int = Field(default=0, description="Total messages this month")
-    total_cost_month: float = Field(default=0.0, description="Total cost this month in USD")
-    voice_used_month: int = Field(default=0, description="Voice interactions used this month")
+    total_tokens_month: Optional[int] = Field(default=0, description="Total tokens consumed this month")
+    total_messages_month: Optional[int] = Field(default=0, description="Total messages this month")
+    total_cost_month: Optional[float] = Field(default=0.0, description="Total cost this month in USD")
+    voice_used_month: Optional[int] = Field(default=0, description="Voice interactions used this month")
     voice_limit: Optional[int] = Field(default=None, description="Voice daily limit (None = unlimited)")
-    is_admin: bool = False
-    is_enterprise_account: bool = False
-    created_at: datetime
+    is_admin: Optional[bool] = False
+    created_at: Optional[datetime] = None
 
 
 class AdminUsageResponse(BaseModel):
@@ -542,13 +541,137 @@ async def get_usage_report(
                 total_cost_month=round(total_cost, 4),
                 voice_used_month=user.voice_used or 0,
                 voice_limit=user.get_voice_daily_limit(),
-                is_admin=user.is_admin,
-                is_enterprise_account=user.is_enterprise_account,
+                is_admin=(user.is_admin == "true") if user.is_admin else False,
                 created_at=user.created_at
             )
             user_stats_list.append(user_stats)
         
         # Build summary statistics
+        summary = {
+            "total_tokens_all_users": total_tokens_all,
+            "total_messages_all_users": total_messages_all,
+            "total_cost_all_users": round(total_cost_all, 2),
+            "total_voice_all_users": total_voice_all,
+            "avg_tokens_per_user": round(total_tokens_all / len(results), 2) if results else 0,
+            "avg_cost_per_user": round(total_cost_all / len(results), 4) if results else 0,
+            "users_by_plan": {
+                "free": sum(1 for u in user_stats_list if u.plan_tier == PlanTier.FREE),
+                "premium": sum(1 for u in user_stats_list if u.plan_tier == PlanTier.PREMIUM),
+                "enterprise": sum(1 for u in user_stats_list if u.plan_tier == PlanTier.ENTERPRISE)
+            }
+        }
+        
+        return AdminUsageResponse(
+            success=True,
+            period_start=period_start,
+            period_end=period_end,
+            total_users=len(results),
+            users=user_stats_list,
+            summary=summary
+        )
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Usage report failed: {str(e)}")
+
+
+@router.get("/usage/report", response_model=AdminUsageResponse)
+async def get_usage_report_alias(
+    admin_key: str = Security(verify_admin_key),
+    db: Session = Depends(get_db),
+    limit: int = 100,
+    sort_by: str = "tokens"  # tokens, cost, messages, voice
+):
+    """
+    Get usage report for all users - Alternative endpoint (Admin only)
+    
+    This is an alias for /usage to maintain backward compatibility.
+    Returns users sorted by their total token consumption and voice usage for the current month.
+    
+    Args:
+        admin_key: Admin API key for authorization
+        db: Database session
+        limit: Maximum number of users to return (default 100)
+        sort_by: Sort field - "tokens", "cost", "messages", or "voice" (default "tokens")
+    
+    Returns:
+        AdminUsageResponse with user statistics sorted by consumption
+    """
+    # Simply delegate to the main usage report endpoint
+    now = datetime.utcnow()
+    period_start = datetime(now.year, now.month, 1)
+    if now.month == 12:
+        period_end = datetime(now.year + 1, 1, 1)
+    else:
+        period_end = datetime(now.year, now.month + 1, 1)
+    
+    try:
+        # Query all users with their usage stats for current month
+        usage_subquery = db.query(
+            UsageLog.user_id,
+            func.sum(UsageLog.tokens_total).label('total_tokens'),
+            func.count(UsageLog.id).label('total_messages'),
+            func.sum(UsageLog.token_cost).label('total_cost')
+        ).filter(
+            and_(
+                UsageLog.created_at >= period_start,
+                UsageLog.created_at < period_end
+            )
+        ).group_by(UsageLog.user_id).subquery()
+        
+        query = db.query(
+            User,
+            func.coalesce(usage_subquery.c.total_tokens, 0).label('total_tokens_month'),
+            func.coalesce(usage_subquery.c.total_messages, 0).label('total_messages_month'),
+            func.coalesce(usage_subquery.c.total_cost, 0.0).label('total_cost_month')
+        ).outerjoin(
+            usage_subquery,
+            User.id == usage_subquery.c.user_id
+        )
+        
+        if sort_by == "cost":
+            query = query.order_by(func.coalesce(usage_subquery.c.total_cost, 0.0).desc())
+        elif sort_by == "messages":
+            query = query.order_by(func.coalesce(usage_subquery.c.total_messages, 0).desc())
+        elif sort_by == "voice":
+            query = query.order_by(User.voice_used.desc())
+        else:
+            query = query.order_by(func.coalesce(usage_subquery.c.total_tokens, 0).desc())
+        
+        query = query.limit(limit)
+        results = query.all()
+        
+        user_stats_list = []
+        total_tokens_all = 0
+        total_messages_all = 0
+        total_cost_all = 0.0
+        total_voice_all = 0
+        
+        for row in results:
+            user = row[0]
+            total_tokens = int(row[1])
+            total_messages = int(row[2])
+            total_cost = float(row[3])
+            
+            total_tokens_all += total_tokens
+            total_messages_all += total_messages
+            total_cost_all += total_cost
+            total_voice_all += user.voice_used or 0
+            
+            user_stats = UserUsageStats(
+                user_id=str(user.id),
+                email=user.email,
+                plan_tier=user.plan_tier,
+                last_login=user.last_login,
+                total_tokens_month=total_tokens,
+                total_messages_month=total_messages,
+                total_cost_month=round(total_cost, 4),
+                voice_used_month=user.voice_used or 0,
+                voice_limit=user.get_voice_daily_limit(),
+                is_admin=(user.is_admin == "true") if user.is_admin else False,
+                created_at=user.created_at
+            )
+            user_stats_list.append(user_stats)
+        
         summary = {
             "total_tokens_all_users": total_tokens_all,
             "total_messages_all_users": total_messages_all,
