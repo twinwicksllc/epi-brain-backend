@@ -17,7 +17,7 @@ from app.models.conversation import Conversation
 from app.models.message import Message, MessageRole
 from app.schemas.conversation import ConversationResponse, ConversationCreate, ConversationWithMessages
 from app.schemas.message import ChatRequest, ChatResponse, MessageResponse
-from app.core.dependencies import get_current_active_user, get_current_user_optional, check_message_limit
+from app.core.dependencies import get_current_active_user, get_current_user_optional, get_current_active_user_optional, check_message_limit
 from app.core.exceptions import ConversationNotFound, UnauthorizedAccess, MessageLimitExceeded
 from app.core.rate_limiter import check_rate_limit, get_rate_limit_info, get_discovery_context, update_discovery_context
 from app.services.claude import ClaudeService
@@ -1421,16 +1421,18 @@ async def send_message(
 
 @router.get("/conversations", response_model=List[ConversationResponse])
 async def get_conversations(
-    current_user: User = Depends(get_current_active_user),
+    current_user: Optional[User] = Depends(get_current_active_user_optional),
     db: Session = Depends(get_db),
     skip: int = 0,
     limit: int = 50
 ):
     """
     Get user's conversations
+    For authenticated users: returns their conversations
+    For unauthenticated users: returns empty list
     
     Args:
-        current_user: Current authenticated user
+        current_user: Current authenticated user (optional)
         db: Database session
         skip: Number of conversations to skip
         limit: Maximum number of conversations to return
@@ -1438,6 +1440,10 @@ async def get_conversations(
         Returns:
             List of user's conversations ordered by last update
     """
+    # If not authenticated, return empty list for guests
+    if not current_user:
+        return []
+    
     conversations = db.query(Conversation).filter(
         Conversation.user_id == current_user.id
     ).order_by(Conversation.updated_at.desc()).offset(skip).limit(limit).all()
@@ -1448,36 +1454,53 @@ async def get_conversations(
 @router.get("/conversations/{conversation_id}", response_model=ConversationWithMessages)
 async def get_conversation(
     conversation_id: UUID,
-    current_user: User = Depends(get_current_active_user),
+    current_user: Optional[User] = Depends(get_current_active_user_optional),
     db: Session = Depends(get_db)
 ):
     """
     Get a specific conversation with messages
+    For authenticated users: can only access their own conversations
+    For unauthenticated users (discovery mode): can access public discovery conversations
     
     Args:
         conversation_id: Conversation UUID
-        current_user: Current authenticated user
+        current_user: Current authenticated user (optional)
         db: Database session
         
     Returns:
         Conversation with messages
     """
     try:
-        logger.info(f"Getting conversation {conversation_id} for user {current_user.id}")
-        
-        conversation = db.query(Conversation).filter(
-            Conversation.id == conversation_id
-        ).first()
-        
-        if not conversation:
-            logger.warning(f"Conversation {conversation_id} not found for user {current_user.id}")
-            raise ConversationNotFound()
-        
-        if conversation.user_id != current_user.id:
-            logger.warning(f"User {current_user.id} attempted to access conversation {conversation_id} owned by {conversation.user_id}")
-            raise UnauthorizedAccess()
-        
-        logger.info(f"Successfully retrieved conversation {conversation_id}")
+        # If authenticated, use standard auth check
+        if current_user:
+            logger.info(f"Getting conversation {conversation_id} for user {current_user.id}")
+            
+            conversation = db.query(Conversation).filter(
+                Conversation.id == conversation_id
+            ).first()
+            
+            if not conversation:
+                logger.warning(f"Conversation {conversation_id} not found for user {current_user.id}")
+                raise ConversationNotFound()
+            
+            if conversation.user_id != current_user.id:
+                logger.warning(f"User {current_user.id} attempted to access conversation {conversation_id} owned by {conversation.user_id}")
+                raise UnauthorizedAccess()
+            
+            logger.info(f"Successfully retrieved conversation {conversation_id}")
+        else:
+            # For guests (unauthenticated), return public discovery conversations
+            # Guests can view conversations without a user_id (for discovery mode sessions)
+            logger.info(f"Getting conversation {conversation_id} for guest (unauthenticated)")
+            
+            conversation = db.query(Conversation).filter(
+                Conversation.id == conversation_id,
+                (Conversation.user_id == None) | (Conversation.mode == DISCOVERY_MODE_ID)
+            ).first()
+            
+            if not conversation:
+                logger.warning(f"Conversation {conversation_id} not found or not accessible to guests")
+                raise ConversationNotFound()
         return conversation
         
     except HTTPException:

@@ -124,11 +124,35 @@ async def get_current_user_optional(
         return None
 
 
-async def get_current_user_optional(
+async def get_current_active_user_optional(
+    current_user: Optional[User] = Depends(get_current_user_optional)
+) -> Optional[User]:
+    """
+    Optional dependency to get current active user
+    Returns None if user is not authenticated or not active
+    
+    Args:
+        current_user: Optional current user from get_current_user_optional
+        
+    Returns:
+        Current active user or None if not authenticated or not active
+    """
+    # Return None if not authenticated
+    if current_user is None:
+        return None
+    
+    # Additional checks can be added here (e.g., is_active, is_verified)
+    return current_user
+
+
+async def get_current_user_optional_old(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False)),
     db: Session = Depends(get_db)
 ) -> Optional[User]:
     """
+    DEPRECATED: This is a duplicate of get_current_user_optional above.
+    Keeping for reference but should be removed in next cleanup.
+    
     Optional dependency to get current authenticated user from JWT token
     Returns None if no valid token is provided (for unauthenticated access)
     
