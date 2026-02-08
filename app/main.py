@@ -96,6 +96,7 @@ async def add_cors_headers(request: Request, call_next):
         if origin and origin in allowed_origins_list:
             logger.info(f"✅ Allowing preflight from whitelisted origin: {origin}")
             return JSONResponse(
+                content={},
                 status_code=200,
                 headers={
                     "Access-Control-Allow-Origin": origin,
@@ -108,8 +109,8 @@ async def add_cors_headers(request: Request, call_next):
         else:
             logger.warning(f"❌ Rejecting preflight from unauthorized origin: {origin}")
             return JSONResponse(
-                status_code=403,
-                content={"detail": "Origin not allowed"}
+                content={"detail": "Origin not allowed"},
+                status_code=403
             )
     
     # Get response from application
