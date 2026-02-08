@@ -8,7 +8,7 @@ from datetime import datetime
 import logging
 
 from app.database import get_db
-from app.models.user import User, VoicePreference
+from app.models.user import User
 from app.schemas.user import UserCreate, UserLogin, UserResponse, Token
 from app.core.security import (
     verify_password,
@@ -122,31 +122,9 @@ async def login(credentials: UserLogin, db: Session = Depends(get_db)):
         # Serialize user object for response
         try:
             logger.debug(f"🔍 Serializing user object for {credentials.email}")
-            logger.debug(f"🔍 User fields: id={user.id}, tier={user.tier}, plan_tier={user.plan_tier}, voice_preference={user.voice_preference}")
             
-            # Ensure all fields have values (defensive programming for legacy users)
-            if not user.voice_preference:
-                user.voice_preference = VoicePreference.NONE
-            if not user.primary_mode:
-                user.primary_mode = "personal_friend"
-            if not user.nebp_phase:
-                user.nebp_phase = "discovery"
-            if not user.message_count:
-                user.message_count = "0"
-            if not user.referral_credits:
-                user.referral_credits = "0"
-            if user.sentiment_override_enabled is None:
-                user.sentiment_override_enabled = True
-            if user.depth_sensitivity_enabled is None:
-                user.depth_sensitivity_enabled = True
-            if not user.accountability_style:
-                user.accountability_style = "adaptive"
-            if not user.global_memory:
-                user.global_memory = {}
-            if not user.subscribed_personalities:
-                user.subscribed_personalities = ["personal_friend", "discovery_mode"]
-            
-            user_response = UserResponse.model_validate(user)
+            # Use model_validate with from_attributes for Pydantic v2
+            user_response = UserResponse.model_validate(user, from_attributes=True, context={"extra": "ignore"})
             logger.info(f"✅ Login successful for {credentials.email}")
             
             return {
@@ -157,10 +135,15 @@ async def login(credentials: UserLogin, db: Session = Depends(get_db)):
             }
         except Exception as e:
             logger.error(f"❌ User serialization failed: {e}", exc_info=True)
-            logger.error(f"❌ User object dict: {user.__dict__}")
+            logger.error(f"❌ User object attributes: {[f'{k}={getattr(user, k, None)}' for k in dir(user) if not k.startswith('_')]}")
+            
+            # Fallback: return token with minimal user data
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
+            
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to serialize user data: {str(e)}"
+                detail="User serialization failed"
             )
     
     except InvalidCredentials:
