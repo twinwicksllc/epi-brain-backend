@@ -53,19 +53,6 @@ if settings.CORS_ORIGINS and settings.CORS_ORIGINS != "*":
     allowed_origins = settings.cors_origins_list
     logger.info(f"🌐 CORS: Using environment variable override: {allowed_origins}")
 
-# Explicitly allow common headers including Authorization
-allowed_headers = [
-    "Accept",
-    "Accept-Language",
-    "Content-Language",
-    "Content-Type",
-    "Authorization",
-    "Origin",
-    "Referer",
-    "User-Agent",
-    "X-Requested-With",
-]
-
 allow_credentials_value = True
 logger.info(f"🌐 CORS Configuration:")
 logger.info(f"   Environment: {settings.ENVIRONMENT}")
@@ -77,8 +64,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=allow_credentials_value,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-    allow_headers=allowed_headers,
+    allow_methods=["*"],  # Allow all HTTP methods
+    allow_headers=["*"],  # Allow all headers
     expose_headers=["*"],
     max_age=3600,  # Cache preflight for 1 hour
 )
@@ -87,25 +74,10 @@ app.add_middleware(
 @app.middleware("http")
 async def add_cors_headers(request: Request, call_next):
     """Add explicit CORS headers to every response"""
-    # Handle preflight OPTIONS requests
-    if request.method == "OPTIONS":
-        origin = request.headers.get("origin", "*")
-        return JSONResponse(
-            status_code=200,
-            headers={
-                "Access-Control-Allow-Origin": origin,
-                "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
-                "Access-Control-Allow-Headers": "Accept, Accept-Language, Content-Language, Content-Type, Authorization, Origin, Referer, User-Agent, X-Requested-With",
-                "Access-Control-Allow-Credentials": "true",
-                "Access-Control-Max-Age": "3600",
-            }
-        )
-    
-    # Get response from application
-    response = await call_next(request)
-    
-    # Add CORS headers to response
     origin = request.headers.get("origin")
+    method = request.method
+    
+    # List of allowed origins
     allowed_origins_list = [
         "https://epibraingenius.com",
         "https://www.epibraingenius.com",
@@ -113,11 +85,45 @@ async def add_cors_headers(request: Request, call_next):
         "https://improved-broccoli-4qqj59q7gjx276p4.github.dev",
     ]
     
+    # Log incoming request for debugging
+    logger.info(f"📍 CORS Request: origin={origin}, method={method}, path={request.url.path}")
+    
+    # Handle preflight OPTIONS requests
+    if method == "OPTIONS":
+        logger.info(f"📋 OPTIONS preflight request from origin: {origin}")
+        
+        # For OPTIONS requests, return immediately with headers
+        if origin and origin in allowed_origins_list:
+            logger.info(f"✅ Allowing preflight from whitelisted origin: {origin}")
+            return JSONResponse(
+                status_code=200,
+                headers={
+                    "Access-Control-Allow-Origin": origin,
+                    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH, HEAD",
+                    "Access-Control-Allow-Headers": request.headers.get("access-control-request-headers", "*"),
+                    "Access-Control-Allow-Credentials": "true",
+                    "Access-Control-Max-Age": "3600",
+                }
+            )
+        else:
+            logger.warning(f"❌ Rejecting preflight from unauthorized origin: {origin}")
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "Origin not allowed"}
+            )
+    
+    # Get response from application
+    response = await call_next(request)
+    
+    # Add CORS headers to actual response
     if origin and origin in allowed_origins_list:
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Access-Control-Allow-Credentials"] = "true"
+        logger.debug(f"✅ Added CORS headers for {origin} on {method} {request.url.path}")
+    else:
+        logger.warning(f"❌ No CORS headers added for {origin} on {method} {request.url.path}")
     
-    logger.debug(f"CORS: origin={origin}, in_allowed={origin in allowed_origins_list if origin else False}")
+    return response
     
     return response
 
