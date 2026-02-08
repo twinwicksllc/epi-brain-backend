@@ -53,14 +53,14 @@ class UserResponse(UserBase):
     is_senior: bool = False  # Commercial MVP
     is_military: bool = False  # Commercial MVP
     is_firstresponder: bool = False  # Commercial MVP
-    voice_preference: VoicePreference
-    primary_mode: str
+    voice_preference: Optional[VoicePreference] = VoicePreference.NONE
+    primary_mode: Optional[str] = "personal_friend"
     silo_id: Optional[str] = None
     nebp_phase: Optional[str] = None
     nebp_clarity_metrics: dict = {}
-    message_count: str
-    referral_code: Optional[str]
-    referral_credits: str
+    message_count: Optional[str] = "0"
+    referral_code: Optional[str] = None
+    referral_credits: Optional[str] = "0"
     voice_limit: Optional[int] = None  # null = unlimited (for admin/pro)
     voice_used: int = 0  # Voice messages used today
     created_at: datetime

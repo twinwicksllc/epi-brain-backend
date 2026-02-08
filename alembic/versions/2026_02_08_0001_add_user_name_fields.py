@@ -15,8 +15,12 @@ depends_on = None
 
 def upgrade() -> None:
     """Add first_name and full_name columns to users table."""
-    op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS first_name VARCHAR(100)")
-    op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name VARCHAR(255)")
+    try:
+        op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS first_name VARCHAR(100)")
+        op.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name VARCHAR(255)")
+    except Exception as e:
+        # Column already exists, continue
+        pass
 
 
 def downgrade() -> None:

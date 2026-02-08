@@ -50,8 +50,12 @@ base_allowed_origins = [
 ]
 
 if is_production:
-    # Production: Use specific frontend domains
-    allowed_origins = base_allowed_origins
+    # Production: Use specific frontend domains (no trailing slashes)
+    allowed_origins = [
+        "https://epibraingenius.com",
+        "https://www.epibraingenius.com",
+        "https://api.epibraingenius.com"
+    ]
     # Allow CORS_ORIGINS env var to override if explicitly set
     if settings.CORS_ORIGINS and settings.CORS_ORIGINS != "*":
         allowed_origins = settings.cors_origins_list
@@ -71,6 +75,7 @@ if is_production:
     allow_credentials_value = True
     logger.info(f"🌐 CORS: Production mode detected")
     logger.info(f"   Allowed origins: {allowed_origins}")
+    logger.info(f"   Environment detected as production: ENVIRONMENT={settings.ENVIRONMENT}")
 else:
     # Development: Allow all origins for testing (but log the attempt)
     allowed_origins = ["*"]
