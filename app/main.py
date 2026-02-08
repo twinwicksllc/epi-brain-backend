@@ -72,6 +72,7 @@ logger.info(f"   Environment: {settings.ENVIRONMENT}")
 logger.info(f"   Production detected: {is_production}")
 logger.info(f"   Allowed origins: {allowed_origins}")
 
+# Add CORS middleware BEFORE all others - this is critical
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
@@ -82,31 +83,41 @@ app.add_middleware(
     max_age=3600,  # Cache preflight for 1 hour
 )
 
-# Add debug middleware to check CORS headers
+# Add explicit CORS response middleware (runs AFTER app logic but BEFORE response sent)
 @app.middleware("http")
-async def debug_cors(request: Request, call_next):
+async def add_cors_headers(request: Request, call_next):
+    """Add explicit CORS headers to every response"""
+    # Handle preflight OPTIONS requests
+    if request.method == "OPTIONS":
+        origin = request.headers.get("origin", "*")
+        return JSONResponse(
+            status_code=200,
+            headers={
+                "Access-Control-Allow-Origin": origin,
+                "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+                "Access-Control-Allow-Headers": "Accept, Accept-Language, Content-Language, Content-Type, Authorization, Origin, Referer, User-Agent, X-Requested-With",
+                "Access-Control-Allow-Credentials": "true",
+                "Access-Control-Max-Age": "3600",
+            }
+        )
+    
+    # Get response from application
     response = await call_next(request)
     
-    # Explicitly add CORS headers as fallback
+    # Add CORS headers to response
     origin = request.headers.get("origin")
-    allowed_frontend_origins = [
+    allowed_origins_list = [
         "https://epibraingenius.com",
         "https://www.epibraingenius.com",
         "https://api.epibraingenius.com",
         "https://improved-broccoli-4qqj59q7gjx276p4.github.dev",
     ]
     
-    if origin in allowed_frontend_origins:
+    if origin and origin in allowed_origins_list:
         response.headers["Access-Control-Allow-Origin"] = origin
         response.headers["Access-Control-Allow-Credentials"] = "true"
-        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
-        response.headers["Access-Control-Allow-Headers"] = "Accept, Accept-Language, Content-Language, Content-Type, Authorization, Origin, Referer, User-Agent, X-Requested-With"
-        response.headers["Access-Control-Expose-Headers"] = "*"
     
-    # Add debug headers
-    response.headers["X-Debug-CORS-Origin"] = str(origin)
-    response.headers["X-Debug-CORS-Method"] = str(request.headers.get("access-control-request-method"))
-    response.headers["X-Debug-Environment"] = str(settings.ENVIRONMENT)
+    logger.debug(f"CORS: origin={origin}, in_allowed={origin in allowed_origins_list if origin else False}")
     
     return response
 
