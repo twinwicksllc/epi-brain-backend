@@ -520,6 +520,20 @@ async def send_message(
     # Accept both "discovery" and "discovery_mode" for discovery mode
     discovery_mode_requested = mode == DISCOVERY_MODE_ID or mode == "discovery"
     
+    # GUEST FALLBACK: If unauthenticated and mode is not a recognized personality,
+    # treat as discovery mode (helps when frontend sends "default" or other unknown values)
+    if not current_user and not discovery_mode_requested:
+        # List of known personalities that require authentication
+        authenticated_personalities = [
+            "therapist", "coach", "mentor", "personal_friend", 
+            "motivator", "psychologist", "life_coach", "wellness_advisor", "psychology_expert"
+        ]
+        if mode.lower() not in authenticated_personalities:
+            # Unknown mode for guest → treat as discovery mode
+            logger.info(f"[DEBUG] Guest sent unknown mode '{mode}', defaulting to discovery_mode")
+            mode = DISCOVERY_MODE_ID
+            discovery_mode_requested = True
+    
     # Debug logging
     logger.info(f"[DEBUG] POST /message - auth_header present: {bool(auth_header)}, current_user: {current_user}, mode: '{mode}', discovery_mode_requested: {discovery_mode_requested}")
     
