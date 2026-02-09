@@ -5,6 +5,7 @@ FastAPI Application Entry Point
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 from sqlalchemy import text
 
 from app.core.logger import logger
@@ -178,6 +179,34 @@ if PHASE_4_API_AVAILABLE:
     app.include_router(thought_records.router, prefix=f"{settings.API_V1_PREFIX}/thought-records", tags=["Thought Records"])
     app.include_router(behavioral_activation.router, prefix=f"{settings.API_V1_PREFIX}/behavioral-activation", tags=["Behavioral Activation"])
     app.include_router(exposure_hierarchy.router, prefix=f"{settings.API_V1_PREFIX}/exposure-hierarchy", tags=["Exposure Hierarchy"])
+
+
+# Global Validation Error Handler - Exposes field-level validation errors to logs
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(request: Request, exc: RequestValidationError):
+    """Handle Pydantic validation errors with detailed logging"""
+    # Log all validation errors with field names and reasons
+    error_details = []
+    for error in exc.errors():
+        field = '.'.join(str(x) for x in error['loc'][1:]) if len(error['loc']) > 1 else str(error['loc'][0])
+        error_details.append({
+            'field': field,
+            'type': error['type'],
+            'message': error['msg'],
+            'context': error.get('ctx', {})
+        })
+    
+    logger.error(f"Validation Error Details: {error_details}")
+    logger.error(f"Request path: {request.url.path}")
+    logger.error(f"Request method: {request.method}")
+    
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": exc.errors(),
+            "message": "Validation failed - check logs for field names"
+        }
+    )
 
 
 # Global exception handler

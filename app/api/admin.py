@@ -41,17 +41,17 @@ class CleanupResponse(BaseModel):
 
 class UserUsageStats(BaseModel):
     """User usage statistics for admin reporting"""
-    user_id: Optional[str] = None
-    email: Optional[str] = None
-    plan_tier: Optional[PlanTier] = PlanTier.FREE
-    last_login: Optional[datetime] = None
+    user_id: Optional[str] = Field(default=None, description="User ID")
+    email: Optional[str] = Field(default=None, description="User email")
+    plan_tier: Optional[PlanTier] = Field(default=PlanTier.FREE, description="User plan tier")
+    last_login: Optional[datetime] = Field(default=None, description="Last login timestamp")
     total_tokens_month: Optional[int] = Field(default=0, description="Total tokens consumed this month")
     total_messages_month: Optional[int] = Field(default=0, description="Total messages this month")
     total_cost_month: Optional[float] = Field(default=0.0, description="Total cost this month in USD")
     voice_used_month: Optional[int] = Field(default=0, description="Voice interactions used this month")
     voice_limit: Optional[int] = Field(default=None, description="Voice daily limit (None = unlimited)")
     is_admin: Optional[bool] = Field(default=False, description="Is user an admin")
-    created_at: Optional[datetime] = None
+    created_at: Optional[datetime] = Field(default=None, description="Account creation timestamp")
     
     class Config:
         from_attributes = True
@@ -59,10 +59,10 @@ class UserUsageStats(BaseModel):
 
 class AdminUsageResponse(BaseModel):
     """Response model for admin usage endpoint"""
-    success: bool
-    period_start: datetime
-    period_end: datetime
-    total_users: int
+    success: Optional[bool] = Field(default=True, description="Whether the request succeeded")
+    period_start: Optional[datetime] = Field(default=None, description="Start of reporting period")
+    period_end: Optional[datetime] = Field(default=None, description="End of reporting period")
+    total_users: Optional[int] = Field(default=0, description="Total number of users returned")
     users: List[UserUsageStats] = Field(default_factory=list, description="List of user usage stats")
     summary: dict = Field(default_factory=dict, description="Aggregate statistics")
     
