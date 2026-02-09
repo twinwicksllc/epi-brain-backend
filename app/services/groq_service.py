@@ -1,7 +1,11 @@
 """
-Groq API Service
-Handles communication with Groq's LLM API (FREE for MVP)
-Uses Llama 3.1 models
+Groq API Service — Neural-Electronic Brain Pipeline (NEBP)
+
+Implements a 4-layer pipeline:
+  Layer 1: Neural Input (STT)    — whisper-large-v3-turbo @ 400 RPM
+  Layer 2: Buffer (Pre-Processing) — llama-3.1-8b-instant (stutter clean + intent fmt)
+  Layer 3: Reasoning Core        — llama-3.3-70b-versatile / openai/gpt-oss-120b
+  Layer 4: Safety Gateway        — llama-guard-4-12b (content moderation)
 """
 
 from groq import Groq
@@ -14,19 +18,152 @@ from app.prompts.discovery_mode import get_discovery_prompt
 
 logger = logging.getLogger(__name__)
 
+# ────────────────────────────────────────────────────────────────
+# Layer 2: Buffer / Pre-Processing prompt
+# ────────────────────────────────────────────────────────────────
+NEBP_BUFFER_SYSTEM_PROMPT = """You are a transcript pre-processor inside an AI
+pipeline. Your ONLY job is to take a raw voice transcript and return a single
+cleaned sentence (or short paragraph) that:
+1. Removes stutters, filler words (um, uh, like, you know), and false starts.
+2. Fixes obvious mis-transcriptions when context makes the intent clear.
+3. Preserves the user's original meaning and tone — do NOT add, remove, or
+   editorialize any intent.
+4. Returns ONLY the cleaned text. No commentary, no labels, no markdown."""
+
 
 class GroqService:
-    """Service for interacting with Groq API"""
+    """Service for interacting with Groq API — full NEBP pipeline"""
     
     def __init__(self):
-        """Initialize Groq client"""
+        """Initialize Groq client with NEBP layer references"""
         self.client = Groq(api_key=settings.GROQ_API_KEY)
         self.model = settings.GROQ_MODEL
+        # NEBP layer models (read from config for env-var override)
+        self.stt_model = settings.NEBP_STT_MODEL          # Layer 1
+        self.buffer_model = settings.NEBP_BUFFER_MODEL     # Layer 2
+        self.reasoning_model = settings.NEBP_REASONING_MODEL  # Layer 3
+        self.safety_model = settings.NEBP_SAFETY_MODEL     # Layer 4
 
+    # ────────────────────────────────────────────────────────────────
+    # Layer 2: Buffer / Pre-Processing
+    # ────────────────────────────────────────────────────────────────
+    async def _buffer_preprocess(self, raw_text: str) -> str:
+        """NEBP Layer 2 — clean stutters and format intent via a fast small model.
+
+        If the buffer is disabled or the call fails, returns the original text so
+        the pipeline is never blocked.
+        """
+        if not settings.NEBP_BUFFER_ENABLED:
+            return raw_text
+
+        try:
+            response = self.client.chat.completions.create(
+                model=self.buffer_model,
+                messages=[
+                    {"role": "system", "content": NEBP_BUFFER_SYSTEM_PROMPT},
+                    {"role": "user", "content": raw_text},
+                ],
+                temperature=0.0,
+                max_tokens=settings.NEBP_BUFFER_MAX_TOKENS,
+                stream=False,
+            )
+            cleaned = response.choices[0].message.content.strip()
+            if cleaned:
+                logger.info(f"[NEBP L2-Buffer] cleaned transcript ({len(raw_text)}->{len(cleaned)} chars)")
+                return cleaned
+            return raw_text
+        except Exception as e:
+            logger.warning(f"[NEBP L2-Buffer] pre-processing failed, using raw text: {e}")
+            return raw_text
+
+    # ────────────────────────────────────────────────────────────────
+    # Layer 4: Safety Gateway
+    # ────────────────────────────────────────────────────────────────
+    async def _safety_gate(self, ai_response: str, user_message: str = "") -> Dict:
+        """NEBP Layer 4 — run llama-guard on the AI response before returning.
+
+        Returns a dict with:
+          - safe (bool): True if content passed moderation
+          - flagged_categories (list[str]): any categories flagged
+          - original_response (str): original AI text
+          - response (str): the text to actually return (replaced if unsafe)
+        """
+        result = {
+            "safe": True,
+            "flagged_categories": [],
+            "original_response": ai_response,
+            "response": ai_response,
+        }
+
+        if not settings.NEBP_SAFETY_ENABLED:
+            return result
+
+        try:
+            guard_response = self.client.chat.completions.create(
+                model=self.safety_model,
+                messages=[
+                    {"role": "user", "content": user_message},
+                    {"role": "assistant", "content": ai_response},
+                ],
+                temperature=0.0,
+                max_tokens=128,
+                stream=False,
+            )
+            verdict = guard_response.choices[0].message.content.strip().lower()
+            logger.info(f"[NEBP L4-Safety] verdict: {verdict}")
+
+            # llama-guard returns 'safe' or 'unsafe\n<categories>'
+            if verdict.startswith("unsafe"):
+                lines = verdict.split("\n")
+                categories = [l.strip() for l in lines[1:] if l.strip()] if len(lines) > 1 else ["unspecified"]
+                result["safe"] = False
+                result["flagged_categories"] = categories
+                result["response"] = (
+                    "I want to make sure I’m being helpful and safe. "
+                    "Let me rephrase my response in a more appropriate way. "
+                    "Could you tell me more about what you’re looking for so I can assist you better?"
+                )
+                logger.warning(f"[NEBP L4-Safety] BLOCKED response, categories={categories}")
+        except Exception as e:
+            # Safety gate must never block the pipeline — log and pass through
+            logger.warning(f"[NEBP L4-Safety] guard check failed, passing through: {e}")
+
+        return result
+
+    # ────────────────────────────────────────────────────────────────
+    # Layer 1: Neural Input (STT)  — exposed for voice endpoint
+    # ────────────────────────────────────────────────────────────────
+    async def transcribe_audio(self, audio_file, language: str = "en") -> str:
+        """NEBP Layer 1 — Speech-to-text using whisper-large-v3-turbo on Groq.
+
+        Args:
+            audio_file: file-like object (e.g. UploadFile.file)
+            language: ISO-639-1 language code
+
+        Returns:
+            Raw transcript text (feed into Layer 2 buffer next).
+        """
+        try:
+            transcription = self.client.audio.transcriptions.create(
+                model=self.stt_model,
+                file=audio_file,
+                language=language,
+                response_format="text",
+            )
+            logger.info(f"[NEBP L1-STT] transcribed {len(transcription)} chars using {self.stt_model}")
+            return transcription
+        except Exception as e:
+            logger.error(f"[NEBP L1-STT] transcription failed: {e}")
+            raise
+
+    # ────────────────────────────────────────────────────────────────
+    # Model selection  (Layer 3 mapping)
+    # ────────────────────────────────────────────────────────────────
     def _select_model(self, mode: str, user_tier: Optional[str] = None) -> str:
-        """Select model based on user tier and personality mode.
+        """Select Layer 3 reasoning model based on user tier and personality mode.
 
         Falls back to settings.GROQ_MODEL when no specific mapping found.
+        CRITICAL: OpenAI-hosted models on Groq use the openai/ prefix.
         """
         tier = (user_tier or "").lower()
         # Free tier
@@ -183,6 +320,9 @@ RESPONSE STYLE: Be concise and motivating. Keep fitness advice brief, actionable
             Dictionary with response content and metadata
         """
         try:
+            # ── NEBP Layer 2: Buffer pre-processing ──────────────
+            processed_message = await self._buffer_preprocess(message)
+
             # Format conversation history
             messages = []
             
@@ -223,13 +363,13 @@ Use the user memory above to personalize your responses. Apply preferences natur
             if conversation_history:
                 messages.extend(self._format_conversation_history(conversation_history))
             
-            # Add current message
+            # Add current (buffer-cleaned) message
             messages.append({
                 "role": "user",
-                "content": message
+                "content": processed_message
             })
             
-            # Choose model per-request
+            # ── NEBP Layer 3: Reasoning Core ─────────────────────
             model = self._select_model(mode, user_tier)
 
             # Call Groq API
@@ -246,12 +386,19 @@ Use the user memory above to personalize your responses. Apply preferences natur
             content = response.choices[0].message.content
             tokens_used = response.usage.total_tokens
             
-            logger.info(f"Groq API response - Mode: {mode}, Model: {model}, Tokens: {tokens_used}")
-            
+            logger.info(f"[NEBP L3-Reasoning] Mode: {mode}, Model: {model}, Tokens: {tokens_used}")
+
+            # ── NEBP Layer 4: Safety Gateway ─────────────────────
+            safety_result = await self._safety_gate(content, user_message=processed_message)
+            final_content = safety_result["response"]
+
             return {
-                "content": content,
+                "content": final_content,
                 "tokens_used": tokens_used,
-                "model": model
+                "model": model,
+                "nebp_buffer_applied": (processed_message != message),
+                "nebp_safety_passed": safety_result["safe"],
+                "nebp_safety_categories": safety_result["flagged_categories"],
             }
             
         except Exception as e:
@@ -283,6 +430,9 @@ Use the user memory above to personalize your responses. Apply preferences natur
             Response content chunks
         """
         try:
+            # ── NEBP Layer 2: Buffer pre-processing ──────────────
+            processed_message = await self._buffer_preprocess(message)
+
             # Format conversation history
             messages = []
             
@@ -313,13 +463,13 @@ Apply the accountability style above when providing support and guidance. Mainta
             if conversation_history:
                 messages.extend(self._format_conversation_history(conversation_history))
             
-            # Add current message
+            # Add current (buffer-cleaned) message
             messages.append({
                 "role": "user",
-                "content": message
+                "content": processed_message
             })
             
-            # Choose model per-request
+            # ── NEBP Layer 3: Reasoning Core ─────────────────────
             model = self._select_model(mode, user_tier)
 
             # Call Groq API with streaming
@@ -332,12 +482,22 @@ Apply the accountability style above when providing support and guidance. Mainta
                 stream=True
             )
             
-            # Stream response chunks
+            # Collect full response for safety gate while streaming chunks
+            full_response = ""
             for chunk in stream:
                 if chunk.choices[0].delta.content:
+                    full_response += chunk.choices[0].delta.content
                     yield chunk.choices[0].delta.content
             
-            logger.info(f"Groq streaming response completed - Mode: {mode}, Model: {model}")
+            logger.info(f"[NEBP L3-Reasoning] streaming done - Mode: {mode}, Model: {model}")
+
+            # ── NEBP Layer 4: Safety Gateway (post-stream audit) ─
+            # For streaming we run the safety gate AFTER all chunks are yielded.
+            # If unsafe, yield a corrective follow-up message.
+            safety_result = await self._safety_gate(full_response, user_message=processed_message)
+            if not safety_result["safe"]:
+                logger.warning(f"[NEBP L4-Safety] streaming response flagged, appending correction")
+                yield f"\n\n---\n{safety_result['response']}"
             
         except Exception as e:
             logger.error(f"Groq streaming API error: {e}")

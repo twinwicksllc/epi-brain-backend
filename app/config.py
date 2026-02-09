@@ -60,22 +60,41 @@ class Settings(BaseSettings):
     GROQ_MODEL: str = "llama-3.3-70b-versatile"
     USE_GROQ: bool = True  # Use Groq by default (set to False to use Claude)
     
+    # ─── NEBP (Neural-Electronic Brain Pipeline) Layer Configuration ───
+    # Layer 1: Neural Input (STT) — Whisper large-v3-turbo, 400 RPM
+    NEBP_STT_MODEL: str = os.getenv("NEBP_STT_MODEL", "whisper-large-v3-turbo")
+    NEBP_STT_RPM: int = int(os.getenv("NEBP_STT_RPM", "400"))
+    
+    # Layer 2: Buffer / Pre-Processing — fast stutter-clean + intent formatting
+    NEBP_BUFFER_MODEL: str = os.getenv("NEBP_BUFFER_MODEL", "llama-3.1-8b-instant")
+    NEBP_BUFFER_ENABLED: bool = os.getenv("NEBP_BUFFER_ENABLED", "True").lower() == "true"
+    NEBP_BUFFER_MAX_TOKENS: int = int(os.getenv("NEBP_BUFFER_MAX_TOKENS", "512"))
+    
+    # Layer 3: Reasoning Core — primary logic model
+    NEBP_REASONING_MODEL: str = os.getenv("NEBP_REASONING_MODEL", "llama-3.3-70b-versatile")
+    NEBP_REASONING_FALLBACK_MODEL: str = os.getenv("NEBP_REASONING_FALLBACK_MODEL", "openai/gpt-oss-120b")
+    
+    # Layer 4: Safety Gateway — ultra-fast content moderation
+    NEBP_SAFETY_MODEL: str = os.getenv("NEBP_SAFETY_MODEL", "llama-guard-4-12b")
+    NEBP_SAFETY_ENABLED: bool = os.getenv("NEBP_SAFETY_ENABLED", "True").lower() == "true"
+    
     # Groq Model Selection (Tier-based)
-    GROQ_MODEL_FREE_DEFAULT: str = "gpt-oss-20b"
+    # CRITICAL: OpenAI-hosted models on Groq MUST use the 'openai/' prefix
+    GROQ_MODEL_FREE_DEFAULT: str = "openai/gpt-oss-120b"
     GROQ_MODEL_PAID_DEFAULT: str = "llama-3.3-70b-versatile"
     
-    # Free Tier Model Mappings
+    # Free Tier Model Mappings (openai/ prefix applied to gpt-oss models)
     GROQ_MODEL_MAP_FREE: dict = {
         "psychology_expert": "groq/compound-mini",
-        "personal_friend": "gpt-oss-20b",
-        "christian_companion": "gpt-oss-20b",
-        "student_tutor": "gpt-oss-20b",
-        "sales_agent": "gpt-oss-20b",
-        "customer_service": "gpt-oss-20b",
-        "business_mentor": "gpt-oss-20b",
-        "weight_loss_coach": "gpt-oss-20b",
+        "personal_friend": "openai/gpt-oss-120b",
+        "christian_companion": "openai/gpt-oss-120b",
+        "student_tutor": "openai/gpt-oss-120b",
+        "sales_agent": "openai/gpt-oss-120b",
+        "customer_service": "openai/gpt-oss-120b",
+        "business_mentor": "openai/gpt-oss-120b",
+        "weight_loss_coach": "openai/gpt-oss-120b",
         "kids_learning": "llama-3.1-8b-instant",
-        "discovery_mode": "gpt-oss-20b",
+        "discovery_mode": "openai/gpt-oss-120b",
     }
     
     # Paid Tier Model Mappings
@@ -87,7 +106,7 @@ class Settings(BaseSettings):
         "sales_agent": "llama-3.3-70b-versatile",
         "business_mentor": "llama-3.3-70b-versatile",
         "weight_loss_coach": "llama-3.3-70b-versatile",
-        "customer_service": "gpt-oss-20b",
+        "customer_service": "openai/gpt-oss-120b",
         "kids_learning": "llama-3.1-8b-instant",
         "discovery_mode": "llama-3.3-70b-versatile",
     }
