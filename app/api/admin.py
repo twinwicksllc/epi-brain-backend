@@ -456,11 +456,13 @@ async def get_usage_report(
     """
     Get usage report for all users (Admin only)
     
+    **Authentication:** Pass admin key as query parameter: `?admin_key=YOUR_ADMIN_KEY`
+    
     Returns users sorted by their total token consumption and voice usage for the current month.
     Includes user details like plan_tier, email, and last_login to identify power users.
     
     Args:
-        admin_key: Admin API key for authorization
+        admin_key: Admin API key for authorization (required query parameter)
         db: Database session
         limit: Maximum number of users to return (default 100)
         sort_by: Sort field - "tokens", "cost", "messages", or "voice" (default "tokens")
@@ -606,11 +608,13 @@ async def get_usage_report_alias(
     """
     Get usage report for all users - Alternative endpoint (Admin only)
     
+    **Authentication:** Pass admin key as query parameter: `?admin_key=YOUR_ADMIN_KEY`
+    
     This is an alias for /usage to maintain backward compatibility.
     Returns users sorted by their total token consumption and voice usage for the current month.
     
     Args:
-        admin_key: Admin API key for authorization
+        admin_key: Admin API key for authorization (required query parameter)
         db: Database session
         limit: Maximum number of users to return (default 100)
         sort_by: Sort field - "tokens", "cost", "messages", or "voice" (default "tokens")

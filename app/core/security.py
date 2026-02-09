@@ -173,24 +173,35 @@ def generate_referral_code(user_id: UUID) -> str:
     referral_code = hash_hex[:8].upper()
     
     return f"EPI{referral_code}"
-def verify_admin_key(admin_key: str) -> bool:
+def verify_admin_key(admin_key: str = None) -> bool:
     """
     Verify admin API key
     
+    This security function extracts the admin_key from query parameters.
+    Usage: add to endpoint as: admin_key: str = Security(verify_admin_key)
+    
+    Frontend should call: GET /api/v1/admin/usage?admin_key=YOUR_ADMIN_KEY
+    
     Args:
-        admin_key: Admin API key to verify
+        admin_key: Admin API key to verify (extracted from query parameters)
     
     Returns:
         True if admin key is valid, raises HTTPException otherwise
     
     Raises:
-        HTTPException: If admin key is invalid
+        HTTPException: If admin key is missing or invalid
     """
     from fastapi import HTTPException
     from app.config import settings
     
+    if not admin_key:
+        raise HTTPException(
+            status_code=401, 
+            detail="Admin API key required. Pass as query parameter: ?admin_key=YOUR_KEY"
+        )
+    
     if not settings.ADMIN_API_KEY:
-        raise HTTPException(status_code=500, detail="Admin API key not configured")
+        raise HTTPException(status_code=500, detail="Admin API key not configured on server")
     
     if admin_key != settings.ADMIN_API_KEY:
         raise HTTPException(status_code=403, detail="Invalid admin API key")
