@@ -520,6 +520,9 @@ async def send_message(
     # Accept both "discovery" and "discovery_mode" for discovery mode
     discovery_mode_requested = mode == DISCOVERY_MODE_ID or mode == "discovery"
     
+    # Debug logging
+    logger.info(f"[DEBUG] POST /message - auth_header present: {bool(auth_header)}, current_user: {current_user}, mode: '{mode}', discovery_mode_requested: {discovery_mode_requested}")
+    
     # Normalize mode to "discovery_mode" for AI services
     if mode == "discovery":
         mode = DISCOVERY_MODE_ID
@@ -543,6 +546,7 @@ async def send_message(
     if not discovery_mode_requested:
         # Require authentication for non-discovery modes
         if current_user is None:
+            logger.warning(f"[DEBUG] Rejecting unauthenticated request for non-discovery mode: {mode}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Authentication required for this mode"
