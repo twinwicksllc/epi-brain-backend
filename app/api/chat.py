@@ -417,7 +417,6 @@ def _build_discovery_context(
     # Report captured data
     if metadata.get("captured_name"):
         lines.append(f"\n✓ Name Captured: {metadata['captured_name']}")
-        lines.append("→ Next step: Verify the name, then ask about intent")
     
     if metadata.get("captured_intent"):
         lines.append(f"✓ Intent Captured: {metadata['captured_intent']}")
@@ -430,22 +429,13 @@ def _build_discovery_context(
         lines.append(f"→ Say: 'I have some great strategies for {metadata.get('captured_intent', 'this topic')}, but to dive deeper, let's get your account set up.'")
         lines.append("→ Then trigger signup bridge immediately")
     
-    # Handle invalid name format
+    # Handle invalid name format (user provided sentence instead of name)
     if invalid_name_format:
         lines.append(
             "\n⚠️ INVALID NAME FORMAT: User provided a sentence or long text, not a name.\n"
-            "→ Action: Politely clarify without moving to intent question.\n"
-            "→ Example: 'That sounds interesting, but I'd love to know what to actually call you. What's your name?'\n"
-            "→ Do NOT ask about their intent until you have a proper name."
-        )
-    
-    # Handle invalid name format
-    if invalid_name_format:
-        lines.append(
-            "⚠️ INVALID NAME FORMAT: User provided a sentence or long text, not a name.\n"
-            "→ Action: Politely clarify without moving to intent question.\n"
-            "→ Example: 'That sounds interesting, but I'd love to know what to actually call you. What's your name?'\n"
-            "→ Do NOT ask about their intent until you have a proper name."
+            "→ Action: Politely clarify and re-ask for their name.\n"
+            "→ Example: 'That sounds interesting, but what should I call you? What's your name?'\n"
+            "→ Do NOT move to the reason/intent question until you have a name."
         )
     
     # Handle signup bridge (both name and intent captured)
@@ -480,11 +470,6 @@ def _build_discovery_context(
                     f"→ Action: {remaining} strike(s) remaining before failsafe triggers. Be direct but warm."
                 )
     
-    if not lines:
-        return None
-
-    return f"<discovery_context>\n" + "\n".join(lines) + "\n</discovery_context>"
-
     if not lines:
         return None
 
