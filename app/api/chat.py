@@ -607,8 +607,8 @@ async def send_message(
         stored_context = get_discovery_context(client_ip)
         logger.info(f"Retrieved stored discovery context for IP {client_ip}: {stored_context}")
         
-        # Check if user hit the limit (3 messages for proactive gating)
-        DISCOVERY_LIMIT_THRESHOLD = 3
+        # Check if user hit the limit (5 messages for proactive gating - matches MAX_MESSAGES_PER_HOUR)
+        DISCOVERY_LIMIT_THRESHOLD = 5
         messages_used = get_rate_limit_info(client_ip).get("messages_used", 0)
         
         if messages_used >= DISCOVERY_LIMIT_THRESHOLD:
