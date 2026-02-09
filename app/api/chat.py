@@ -486,6 +486,23 @@ async def send_message(
     Send a message and get AI response
     Supports both authenticated and unauthenticated users (for discovery mode)
     
+    MODE ASSIGNMENT LOGIC (Internal - No Manual Switching):
+    
+    For unauthenticated users (guests):
+    - Always uses "discovery_mode" - Initial discovery experience
+    - IP-based rate limiting: 5 messages per hour max
+    - No conversation persistence
+    - Captures name and intent for lead generation
+    
+    For authenticated users (logged in):
+    - If no mode specified: Uses "personal_friend" (default/homepage mode)
+    - If mode specified: Must be in user's subscribed personalities
+    - Conversation is persisted with the selected mode
+    - Full feature access (memory, goals, depth tracking, etc.)
+    
+    Previous manual mode switching via /modes/switch has been removed.
+    Mode assignments now follow the user journey: Discovery → Default → Subscribed Modes
+    
     Args:
         chat_request: Chat request with message and optional conversation_id
         request: FastAPI request object (for IP rate limiting)

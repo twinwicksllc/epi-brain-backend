@@ -202,10 +202,12 @@ DEBUG=True
 - `POST /api/v1/chat/conversations` - Create new conversation
 - `DELETE /api/v1/chat/conversations/{id}` - Delete conversation
 
-### Modes
-- `GET /api/v1/modes` - Get available personality modes
-- `POST /api/v1/modes/switch` - Switch personality mode
-- `GET /api/v1/modes/{mode}/config` - Get mode configuration
+### Modes (Reference Only)
+⚠️ **Personality modes are now assigned internally based on user journey (Discovery → Default).
+Manual mode switching is no longer supported.**
+
+- `GET /api/v1/modes` - Get available personality modes *(deprecated, reference only)*
+- `GET /api/v1/modes/{mode}` - Get mode details *(deprecated, reference only)*
 
 ### Voice
 - `POST /api/v1/voice/synthesize` - Text-to-speech

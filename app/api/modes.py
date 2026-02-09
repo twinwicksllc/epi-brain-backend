@@ -92,6 +92,10 @@ async def get_available_modes(
     """
     Get list of available personality modes for current user
     
+    ⚠️ DEPRECATED: Mode selection is now handled internally based on user journey.
+    This endpoint is retained for reference/documentation purposes only.
+    Personality modes are assigned automatically (Discovery → Default).
+    
     Args:
         current_user: Current authenticated user
         
@@ -126,6 +130,9 @@ async def get_mode_details(
     """
     Get details for a specific personality mode
     
+    ⚠️ DEPRECATED: Mode selection is now handled internally based on user journey.
+    This endpoint is retained for reference only.
+    
     Args:
         mode_id: Mode identifier
         current_user: Current authenticated user
@@ -150,41 +157,4 @@ async def get_mode_details(
         **mode_data,
         "available": available,
         "upgrade_required": not available
-    }
-
-
-@router.post("/switch")
-async def switch_mode(
-    mode_id: str,
-    current_user: User = Depends(get_current_active_user)
-):
-    """
-    Switch to a different personality mode
-    
-    Args:
-        mode_id: Mode identifier to switch to
-        current_user: Current authenticated user
-        
-    Returns:
-        Success message with new mode
-    """
-    from app.core.exceptions import InvalidMode
-    from fastapi import HTTPException, status
-    
-    if mode_id not in AVAILABLE_MODES:
-        raise InvalidMode(mode_id)
-    
-    mode_data = AVAILABLE_MODES[mode_id]
-    
-    # Check if user has access
-    if mode_data["tier_required"] == "pro" and current_user.is_free_tier:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Mode '{mode_data['name']}' requires Pro tier. Please upgrade."
-        )
-    
-    return {
-        "message": f"Switched to {mode_data['name']} mode",
-        "mode_id": mode_id,
-        "mode_name": mode_data["name"]
     }
