@@ -537,6 +537,9 @@ async def send_message(
     # Debug logging
     logger.info(f"[DEBUG] POST /message - auth_header present: {bool(auth_header)}, current_user: {current_user}, mode: '{mode}', discovery_mode_requested: {discovery_mode_requested}")
     
+    if discovery_mode_requested and not current_user:
+        logger.info(f"[DISCOVERY_MODE] Guest request (discovery mode) - message: {chat_request.message[:50]}...")
+    
     # Normalize mode to "discovery_mode" for AI services
     if mode == "discovery":
         mode = DISCOVERY_MODE_ID
@@ -1222,9 +1225,9 @@ async def send_message(
                 conversation_depth=new_depth if new_depth else None,  # Phase 3: Pass conversation depth
                 silo_id=silo_id
             )
-            logger.info("Successfully got response from Groq service")
+            logger.info(f"[AI_SERVICE] Successfully got response from Groq service - mode: {chat_request.mode}, current_user: {current_user}, content length: {len(ai_response.get('content', ''))}")
         except Exception as e:
-            logger.error(f"Groq service failed: {e}", exc_info=True)
+            logger.error(f"[AI_SERVICE] Groq service failed: {e}", exc_info=True)
             raise Exception(f"Groq service failed: {str(e)}")
         
         response_time_ms = int((datetime.utcnow() - start_time).total_seconds() * 1000)
@@ -1406,7 +1409,7 @@ async def send_message(
         # Return response - handle both authenticated and unauthenticated users
         if current_user and conversation and ai_message:
             # Authenticated user: return full response with database IDs
-            return ChatResponse(
+            response = ChatResponse(
                 message_id=ai_message.id,
                 conversation_id=conversation.id,
                 content=final_content,
@@ -1417,9 +1420,11 @@ async def send_message(
                 depth=new_depth if depth_enabled else None,
                 metadata=metadata_response
             )
+            logger.info(f"[RESPONSE] Authenticated user - content length: {len(final_content)}, content preview: {final_content[:100]}")
+            return response
         else:
             # Unauthenticated discovery mode: return simplified response
-            return ChatResponse(
+            response = ChatResponse(
                 message_id=None,  # No message saved
                 conversation_id=None,  # No conversation created
                 content=final_content,
@@ -1430,6 +1435,9 @@ async def send_message(
                 depth=new_depth if depth_enabled else None,
                 metadata=metadata_response
             )
+            logger.info(f"[RESPONSE] Guest (discovery mode) - content length: {len(final_content)}, content preview: {final_content[:100]}, mode: {chat_request.mode}")
+            logger.debug(f"[RESPONSE] Full guest response: {response.dict()}")
+            return response
         
     except Exception as e:
         db.rollback()
