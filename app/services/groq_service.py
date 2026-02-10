@@ -21,6 +21,8 @@ logger = logging.getLogger(__name__)
 # ────────────────────────────────────────────────────────────────
 # Layer 2: Buffer / Pre-Processing prompt
 # ────────────────────────────────────────────────────────────────
+import re
+
 NEBP_BUFFER_SYSTEM_PROMPT = """You are a transcript pre-processor inside an AI
 pipeline. Your ONLY job is to take a raw voice transcript and return a single
 cleaned sentence (or short paragraph) that:
@@ -28,7 +30,26 @@ cleaned sentence (or short paragraph) that:
 2. Fixes obvious mis-transcriptions when context makes the intent clear.
 3. Preserves the user's original meaning and tone — do NOT add, remove, or
    editorialize any intent.
-4. Returns ONLY the cleaned text. No commentary, no labels, no markdown."""
+4. CRITICAL: If the text is already clear and contains NO stutters, fillers, or
+   false starts, return the input EXACTLY as provided without changing a single
+   character.
+5. Returns ONLY the cleaned text. No commentary, no labels, no markdown."""
+
+# Stutter pattern detection for conditional bypass
+STUTTER_PATTERNS = [
+    r'\b(um|uh|er|ah|hmm|like|you know|basically|literally|honestly|right|so)\b',
+    r'\b(\w+)\s+\1\b',  # Repeated words
+    r'\w+\s+\.\.\.',  # Trailing ellipsis
+    r'\b(yeah|yep|nope|kinda|sorta|gonna|wanna|gotta)\b',  # Informal/unstable speech
+]
+
+def _has_stutter_patterns(text: str) -> bool:
+    """Detect if text contains characteristic stutter/filler patterns."""
+    text_lower = text.lower()
+    for pattern in STUTTER_PATTERNS:
+        if re.search(pattern, text_lower):
+            return True
+    return False
 
 
 class GroqService:
@@ -47,13 +68,29 @@ class GroqService:
     # ────────────────────────────────────────────────────────────────
     # Layer 2: Buffer / Pre-Processing
     # ────────────────────────────────────────────────────────────────
-    async def _buffer_preprocess(self, raw_text: str) -> str:
+    async def _buffer_preprocess(self, raw_text: str, is_voice: bool = False) -> str:
         """NEBP Layer 2 — clean stutters and format intent via a fast small model.
+
+        Only executes if:
+        - is_voice=True (explicitly marked as voice input), OR
+        - Text contains characteristic stutter/filler patterns
 
         If the buffer is disabled or the call fails, returns the original text so
         the pipeline is never blocked.
+
+        Args:
+            raw_text: Input text to clean
+            is_voice: True if input came from voice/STT, False if text input
         """
         if not settings.NEBP_BUFFER_ENABLED:
+            return raw_text
+
+        # Conditional bypass: only process if voice OR stutter patterns detected
+        has_stutters = _has_stutter_patterns(raw_text)
+        should_process = is_voice or has_stutters
+
+        if not should_process:
+            logger.info(f"[NEBP L2-Buffer] bypass (not voice, no stutter patterns) - {len(raw_text)} chars passed through")
             return raw_text
 
         try:
@@ -69,7 +106,7 @@ class GroqService:
             )
             cleaned = response.choices[0].message.content.strip()
             if cleaned:
-                logger.info(f"[NEBP L2-Buffer] cleaned transcript ({len(raw_text)}->{len(cleaned)} chars)")
+                logger.info(f"[NEBP L2-Buffer] processed ({len(raw_text)}->{len(cleaned)} chars, is_voice={is_voice}, has_stutters={has_stutters})")
                 return cleaned
             return raw_text
         except Exception as e:
